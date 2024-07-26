@@ -14,6 +14,10 @@
 #include <adrv906x_def.h>
 #include <adrv906x_util.h>
 
+#include <drivers/adi/adi_otp.h>
+#include <drivers/adi/adi_te_interface.h>
+#include <drivers/adi/adrv906x/adi_adrv906x_otp.h>
+
 /*
  * Register the large physical memory area for Secure peripherals including UART, I2C, SCRATCH regs, gpio, etc
  */
@@ -33,6 +37,9 @@ register_phys_mem(MEM_AREA_IO_NSEC, PL011_0_BASE, PL011_REG_SIZE);
 
 /* Register the physical memory area for SCRATCH_NS registers */
 register_phys_mem(MEM_AREA_IO_NSEC, A55_SYS_CFG + SCRATCH_NS, SMALL_PAGE_SIZE);
+
+/* Register the physical memory area for OTP registers */
+register_phys_mem(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
 
 static bool is_dual_tile = false;
 static bool is_secondary_linux_enabled = false;
@@ -89,6 +96,97 @@ bool plat_is_dual_tile(void)
 bool plat_is_secondary_linux_enabled(void)
 {
 	return is_secondary_linux_enabled;
+}
+
+TEE_Result plat_set_enforcement_counter(void)
+{
+	vaddr_t base;
+	uint32_t current_counter_value;
+	uint32_t counter_value = plat_get_anti_rollback_counter();
+
+	base = (vaddr_t)phys_to_virt_io(OTP_BASE, SMALL_PAGE_SIZE);
+
+	if (adrv906x_otp_get_rollback_counter(base, &current_counter_value) != ADI_OTP_SUCCESS)
+		return TEE_ERROR_GENERIC;
+
+	/* Check device-tree value with the current value from the OTP memory */
+	if (counter_value < current_counter_value)
+		return TEE_ERROR_GENERIC;
+	else if (counter_value == current_counter_value)
+		return TEE_SUCCESS;
+
+	if (adrv906x_otp_set_rollback_counter(base, counter_value) != ADI_OTP_SUCCESS)
+		return TEE_ERROR_GENERIC;
+
+	return TEE_SUCCESS;
+}
+
+TEE_Result plat_set_te_enforcement_counter(void)
+{
+	int status = 0;
+	uint32_t current_counter_value;
+	uint32_t new_counter_value = plat_get_te_anti_rollback_counter();
+
+	status = adi_enclave_get_otp_app_anti_rollback(TE_MAILBOX_BASE, &current_counter_value);
+	if (status != 0)
+		return TEE_ERROR_GENERIC;
+
+	/* Check device-tree value with the current value from the TE OTP memory */
+	if (new_counter_value < current_counter_value)
+		return TEE_ERROR_GENERIC;
+	else if (new_counter_value == current_counter_value)
+		return TEE_SUCCESS;
+
+	/* Run the update interface (that increments +1) as needed */
+	while (new_counter_value > current_counter_value) {
+		status = adi_enclave_update_otp_app_anti_rollback(TE_MAILBOX_BASE, &current_counter_value);
+		if (status != 0)
+			return TEE_ERROR_GENERIC;
+	}
+
+	return TEE_SUCCESS;
+}
+
+TEE_Result plat_get_enforcement_counter(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS])
+{
+	vaddr_t base;
+	uint32_t counter_value;
+	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE);
+
+	if (param_types != exp_param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	base = (vaddr_t)phys_to_virt_io(OTP_BASE, SMALL_PAGE_SIZE);
+	if (adrv906x_otp_get_rollback_counter(base, &counter_value) != ADI_OTP_SUCCESS)
+		return TEE_ERROR_GENERIC;
+
+	params[0].value.a = counter_value;
+
+	return TEE_SUCCESS;
+}
+
+TEE_Result plat_get_te_enforcement_counter(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS])
+{
+	int status = 0;
+	uint32_t counter_value;
+	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE,
+						   TEE_PARAM_TYPE_NONE);
+
+	if (param_types != exp_param_types)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	status = adi_enclave_get_otp_app_anti_rollback(TE_MAILBOX_BASE, &counter_value);
+	if (status != 0)
+		return TEE_ERROR_GENERIC;
+
+	params[0].value.a = counter_value;
+
+	return TEE_SUCCESS;
 }
 
 void main_init_gic(void)

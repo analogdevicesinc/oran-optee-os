@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: BSD-2-Clause
+/*
+ * Copyright (c) 2024, Analog Devices Incorporated. All rights reserved.
+ */
+
+#ifndef ADRV906X_MEMDUMP_EXCLUSION_LIST_H
+#define ADRV906X_MEMDUMP_EXCLUSION_LIST_H
+
+#include <stdint.h>
+
+const uint64_t memdump_bit_field_exclude_list[][2] = {};
+
+const uint64_t memdump_exclude_list[][2] = {
+	{ 0x2b360000, 0x2b36002f },
+	{ 0x2b360100, 0x2b360123 },
+	{ 0x2b360200, 0x2b3602c3 },
+	{ 0x2b360300, 0x2b360317 },
+	{ 0x2b360400, 0x2b360427 },
+	{ 0x2b360500, 0x2b360513 },
+	{ 0x2b360600, 0x2b360633 },
+	{ 0x2b360700, 0x2b36072f },
+	{ 0x2b360800, 0x2b360837 },
+	{ 0x2b360900, 0x2b360923 },
+	{ 0x2b370000, 0x2b37002f },
+	{ 0x2b370100, 0x2b370123 },
+	{ 0x2b370200, 0x2b3702c3 },
+	{ 0x2b370300, 0x2b370317 },
+	{ 0x2b370400, 0x2b370427 },
+	{ 0x2b370500, 0x2b370513 },
+	{ 0x2b370600, 0x2b370633 },
+	{ 0x2b370700, 0x2b37072f },
+	{ 0x2b370800, 0x2b370837 },
+	{ 0x2b370900, 0x2b370923 },
+	{ 0x2f360000, 0x2f36002f },
+	{ 0x2f360100, 0x2f360123 },
+	{ 0x2f360200, 0x2f3602c3 },
+	{ 0x2f360300, 0x2f360317 },
+	{ 0x2f360400, 0x2f360427 },
+	{ 0x2f360500, 0x2f360513 },
+	{ 0x2f360600, 0x2f360633 },
+	{ 0x2f360700, 0x2f36072f },
+	{ 0x2f360800, 0x2f360837 },
+	{ 0x2f360900, 0x2f360923 },
+	{ 0x2f370000, 0x2f37002f },
+	{ 0x2f370100, 0x2f370123 },
+	{ 0x2f370200, 0x2f3702c3 },
+	{ 0x2f370300, 0x2f370317 },
+	{ 0x2f370400, 0x2f370427 },
+	{ 0x2f370500, 0x2f370513 },
+	{ 0x2f370600, 0x2f370633 },
+	{ 0x2f370700, 0x2f37072f },
+	{ 0x2f370800, 0x2f370837 },
+	{ 0x2f370900, 0x2f370923 }
+};
+
+#endif /* ADRV906X_MEMDUMP_EXCLUSION_LIST_H */

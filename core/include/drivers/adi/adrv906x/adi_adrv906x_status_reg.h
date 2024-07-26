@@ -13,8 +13,7 @@ typedef enum {
 	RESET_CAUSE,
 	BOOT_CNT,
 	STARTING_SLOT,
-	LAST_SLOT,
-	RECOVERY_BOOT_ACTIVE
+	LAST_SLOT
 } plat_status_reg_id_t;
 
 uint32_t plat_rd_status_reg(plat_status_reg_id_t reg);

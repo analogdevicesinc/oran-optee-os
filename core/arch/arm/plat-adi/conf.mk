@@ -39,11 +39,23 @@ CFG_DTB_MAX_SIZE ?= 0x100000
 # Enable boot pseudo TA
 CFG_ADI_BOOT_PTA ?= y
 
+# Enable enforcement_counter TA
+CFG_ADI_ENFORCEMENT_COUNTER_PTA ?= y
+
 # Enable TE interface driver module
 CFG_ADI_TE_INTERFACE ?= y
 
-# Enable memory access interface module
-CFG_ADI_ADIMEM_PTA ?= y
+# Enable OTP driver module
+CFG_ADI_OTP ?= y
+
+# Enable TE Mailbox pseudo TA
+CFG_TE_MAILBOX_PTA ?= y
+
+# Enable I2C interface driver module
+CFG_ADI_I2C ?= y
+
+# Enable MACs pseudo TA
+CFG_ADI_OTP_MACS_PTA ?= y
 
 #
 # Platform-flavor-specific configurations
@@ -51,5 +63,26 @@ CFG_ADI_ADIMEM_PTA ?= y
 
 ifeq ($(PLATFORM_FLAVOR),adrv906x_eval)
 include core/arch/arm/plat-adi/adrv906x_eval.mk
+endif
+
+#
+# Unused features
+#
+CFG_GP_SOCKETS ?= n
+
+#
+# Configuration for production
+#
+ifneq ($(DEBUG),1)
+CFG_WARN_INSECURE = n
+# Stack trace
+CFG_LOCKDEP_RECORD_STACK = n
+CFG_UNWIND = n
+# Logs
+CFG_DEBUG_INFO = n
+CFG_TEE_CORE_DEBUG = n
+CFG_TEE_CORE_TA_TRACE = n
+# Adimem PTA
+CFG_ADI_ADIMEM_PTA = n
 endif
 

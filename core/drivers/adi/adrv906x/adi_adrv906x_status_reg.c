@@ -29,6 +29,7 @@ typedef enum {
 	RESET_VALUE,
 	IMG_VERIFY_FAIL,
 	WATCHDOG_RESET,
+	ECC_ERROR,
 	OTHER_RESET_CAUSE,
 } reset_cause_t;
 

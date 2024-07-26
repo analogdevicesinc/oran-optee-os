@@ -4,3 +4,4 @@ srcs-$(CFG_ADI_ADRV906X_PINCTRL) += adi_adrv906x_pinctrl.c
 srcs-$(CFG_ADI_ADRV906X_PINCTRL) += adi_adrv906x_pinmux_source_def.c
 srcs-$(CFG_ADI_ADRV906X_PINCTRL) += adi_adrv906x_pinctrl_init.c
 srcs-$(CFG_ADI_ADRV906X_GPIO) += adi_adrv906x_gpio.c
+srcs-$(CFG_ADI_ADRV906X_OTP) += adi_adrv906x_otp.c
