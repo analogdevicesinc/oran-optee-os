@@ -74,6 +74,13 @@ endif
 CFG_GP_SOCKETS ?= n
 
 #
+# Set DEBUG flag for debug builds
+#
+ifeq ($(DEBUG),1)
+platform-cflags-debug-info = -DDEBUG=1
+endif
+
+#
 # Configuration for production
 #
 ifneq ($(DEBUG),1)
@@ -85,7 +92,5 @@ CFG_UNWIND = n
 CFG_DEBUG_INFO = n
 CFG_TEE_CORE_DEBUG = n
 CFG_TEE_CORE_TA_TRACE = n
-# Adimem PTA
-CFG_ADI_ADIMEM_PTA = n
 endif
 
