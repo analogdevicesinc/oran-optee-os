@@ -43,6 +43,7 @@ register_phys_mem(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
 
 static bool is_dual_tile = false;
 static bool is_secondary_linux_enabled = false;
+static uint64_t sysclk_freq = 0ULL;
 
 /* Read the dual-tile flag from the device tree, store locally */
 static void init_dual_tile_flag(void)
@@ -82,6 +83,25 @@ static void init_secondary_linux_flag(void)
 			if (prop != NULL)
 				if (fdt32_to_cpu(*prop) == 1)
 					is_secondary_linux_enabled = true;
+		}
+	}
+}
+
+static void init_sysclk_freq(void)
+{
+	void *fdt;
+	int offset;
+	const fdt32_t *prop;
+
+	sysclk_freq = 0;
+
+	fdt = get_external_dt();
+	if (fdt != 0) {
+		offset = fdt_path_offset(fdt, "/sysclk");
+		if (offset >= 0) {
+			prop = fdt_getprop(fdt, offset, "clock-frequency", NULL);
+			if (prop != NULL)
+				sysclk_freq = fdt32_to_cpu(*prop);
 		}
 	}
 }
@@ -189,17 +209,25 @@ TEE_Result plat_get_te_enforcement_counter(uint32_t param_types, TEE_Param param
 	return TEE_SUCCESS;
 }
 
+/* Return the cached copy of the sysclk frequency from the device tree */
+uint32_t plat_get_sysclk_freq(void)
+{
+	return sysclk_freq;
+}
+
 void main_init_gic(void)
 {
 	vaddr_t addr;
 	TEE_Result ret;
 
 	/* Read and cache the dual-tile and secondary-linux-enabled flags from the device tree.
+	 * Also read and cache the sysclk frequency from the device tree.
 	 * Note: It is necessary to save these off here because the device tree is
 	 * unavailable at runtime, when the secondary_launcher PTA needs this information.
 	 */
 	init_dual_tile_flag();
 	init_secondary_linux_flag();
+	init_sysclk_freq();
 
 	/* If this is not a dual-tile system, remove the page table entry for secondary peripherals.
 	 * Note: It is easier to remove an entry for single-tile than dynamically add an entry

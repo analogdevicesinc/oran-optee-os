@@ -9,6 +9,9 @@
 
 #include <mm/core_memprot.h>
 
+#define I2C_SPEED_MAX                      (400 * 1000)         /* 400 KHz */
+#define I2C_SPEED_MIN                      (21 * 1000)          /* 21 KHz */
+
 struct adi_i2c_handle {
 	paddr_t pa;             /* Physical base address */
 	vaddr_t va;             /* Virtual base address */

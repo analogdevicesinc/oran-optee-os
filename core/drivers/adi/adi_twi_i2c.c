@@ -12,12 +12,7 @@
 #include <tee_api_types.h>
 #include <trace.h>
 
-#include "adi_twi_i2c_regmap.h"      /* I2C (TWI) block registers */
-
-
-
-#define I2C_SPEED_MAX                      (400 * 1000)         /* 400 KHz */
-#define I2C_SPEED_MIN                      (21 * 1000)          /* 21 KHz */
+#include "adi_twi_i2c_regmap.h"                                 /* I2C (TWI) block registers */
 
 #define I2C_M_WRITE                        0x00                 /* Write to current or specified internal device address */
 #define I2C_M_READ                         0x01                 /* Read from current internal device address */
