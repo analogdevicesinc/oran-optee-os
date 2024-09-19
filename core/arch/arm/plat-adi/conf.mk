@@ -57,6 +57,9 @@ CFG_ADI_I2C ?= y
 # Enable MACs pseudo TA
 CFG_ADI_OTP_MACS_PTA ?= y
 
+# Enable alive-reply pseudo TA
+CFG_ADI_ALIVE_REPLY ?= y
+
 #
 # Platform-flavor-specific configurations
 #
