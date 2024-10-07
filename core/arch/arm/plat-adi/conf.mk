@@ -57,15 +57,13 @@ CFG_ADI_I2C ?= y
 # Enable MACs pseudo TA
 CFG_ADI_OTP_MACS_PTA ?= y
 
-# Enable power monitoring pseudo TA
-CFG_ADI_I2C ?= y
-
 #
 # Platform-flavor-specific configurations
 #
-
-ifeq ($(PLATFORM_FLAVOR),adrv906x_eval)
-include core/arch/arm/plat-adi/adrv906x_eval.mk
+ifeq ($(PLATFORM_FLAVOR),adrv906x_denali)
+include core/arch/arm/plat-adi/adrv906x_denali.mk
+else ifeq ($(PLATFORM_FLAVOR),adrv906x_titan)
+include core/arch/arm/plat-adi/adrv906x_titan.mk
 endif
 
 #

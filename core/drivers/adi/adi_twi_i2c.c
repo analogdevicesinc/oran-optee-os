@@ -38,7 +38,7 @@ static void twi_reg_write(vaddr_t addr, uint16_t value)
 	io_write16(addr, value);
 }
 
-static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags, uint8_t *addr_buf, uint32_t addr_len, uint8_t *data, uint32_t data_len)
+static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags, uint8_t *addr_buf, uint32_t addr_len, uint8_t *write_data, uint8_t *read_data, uint32_t write_data_len, uint32_t read_data_len)
 {
 	uint32_t dcnt;
 	uint16_t int_stat;
@@ -63,6 +63,14 @@ static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags,
 	 *                  :                       :                 :                                :                       :       :
 	 *                  :                       :                 :                                :                       :       :
 	 *                TXSERV                  TXSERV            MCOMP                            RXSERV                  RXSERV  MCOMP
+	 *
+	 * Write-read:
+	 *
+	 *                  /------------- optional ------------------\
+	 * S | DEV_ADDR | W | ADDR BYTE 1 | A | ... | ADDR_BYTE M | A | DATA BYTE 1 | A | ... | DATA_BYTE M | A |.S | DEV_ADDR | R | DATA BYTE 1 | A | ... | DATA BYTE N | A | P |
+	 *                  :                       :                 :                       :                 :        						 :		         		 :		 :
+	 *                  :                       :                 :                       :                 :      							 :					     :		 :
+	 *                TXSERV                  TXSERV            TXSERV                  TXSERV      	  MCOMP  						   RXSERV     			   RXSERV  MCOMP
 	 *
 	 * where:
 	 *   M = 0, 1 or 2
@@ -92,9 +100,9 @@ static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags,
 			if (addr_len) {
 				twi_reg_write(base + TWI_TXDATA8, *(addr_buf++));
 				addr_len--;
-			} else if (data_len && !(flags & I2C_M_READ_COMBO)) {
-				twi_reg_write(base + TWI_TXDATA8, *(data++));
-				data_len--;
+			} else if (write_data_len) {
+				twi_reg_write(base + TWI_TXDATA8, *(write_data++));
+				write_data_len--;
 			} else {
 				ctrl = twi_reg_read(base + TWI_MSTRCTL);
 				if (flags & I2C_M_READ_COMBO)
@@ -113,12 +121,12 @@ static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags,
 				break;
 			}
 
-			if (data_len) {
-				*(data++) = twi_reg_read(base + TWI_RXDATA8);
-				data_len--;
+			if (read_data_len) {
+				*(read_data++) = twi_reg_read(base + TWI_RXDATA8);
+				read_data_len--;
 			}
 
-			if ((data_len == 0) && (flags & I2C_M_STOP)) {
+			if ((read_data_len == 0) && (flags & I2C_M_STOP)) {
 				ctrl = twi_reg_read(base + TWI_MSTRCTL);
 				twi_reg_write(base + TWI_MSTRCTL, ctrl | TWI_MSTRCTL_STOP);
 			}
@@ -126,22 +134,23 @@ static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags,
 
 		if (int_stat & TWI_ISTAT_MERR) {
 			twi_reg_write(base + TWI_ISTAT, TWI_ISTAT_MERR);
-			return data_len;
+			EMSG("Error detected\n");
+			return write_data_len + read_data_len;
 		}
 
 		if (int_stat & TWI_ISTAT_MCOMP) {
 			twi_reg_write(base + TWI_ISTAT, TWI_ISTAT_MCOMP);
 
-			if (((flags & I2C_M_READ_COMBO)) && data_len) {
-				/* Address sent. Start the receive transfer */
+			if (((flags & I2C_M_READ_COMBO)) && read_data_len) {
+				/* Address/data sent. Start the receive transfer */
 				ctrl = twi_reg_read(base + TWI_MSTRCTL);
-				if (data_len >= 255) {
+				if (read_data_len >= 255) {
 					/* Stop signal generated manually */
 					dcnt = 0xFF;
 					flags |= I2C_M_STOP;
 				} else {
 					/* Stop signal generated automatically */
-					dcnt = data_len;
+					dcnt = read_data_len;
 				}
 				ctrl = (ctrl & ~TWI_MSTRCTL_RSTART) | (dcnt << TWI_MSTRCTL_DCNT_OFFSET) | TWI_MSTRCTL_EN | TWI_MSTRCTL_DIR;
 
@@ -155,10 +164,10 @@ static uint32_t wait_for_completion(struct adi_i2c_handle *hi2c, uint32_t flags,
 			timeout = timeout_init_us(TIMEOUT_US_DELAY);
 	} while (!timeout_elapsed(timeout));
 
-	return data_len;
+	return write_data_len + read_data_len;
 }
 
-static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, uint8_t dev_addr, uint32_t addr, uint32_t addr_len, uint8_t *data, uint32_t data_len)
+static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, uint8_t dev_addr, uint32_t addr, uint32_t addr_len, uint8_t *data, uint32_t write_data_len, uint32_t read_data_len)
 {
 	uint32_t dcnt;
 	uint8_t clkhilow;
@@ -169,11 +178,31 @@ static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, 
 	int ret;
 	vaddr_t base = hi2c->va;
 	uint64_t timeout;
+	uint8_t *read_data = data;
 
 	/* Sanity checks */
-	if ((flags != I2C_M_WRITE) && (flags != I2C_M_READ)) {
-		EMSG("Operation not supported\n");
-		return TEE_ERROR_BAD_PARAMETERS;
+	switch (flags) {
+	case I2C_M_WRITE:
+		if ((read_data_len != 0) || (write_data_len == 0)) {
+			EMSG("Invalid write or read length\n");
+			return -TEE_ERROR_BAD_PARAMETERS;
+		}
+		break;
+	case I2C_M_READ:
+		if ((read_data_len == 0) || (write_data_len != 0)) {
+			EMSG("Invalid write or read length\n");
+			return -TEE_ERROR_BAD_PARAMETERS;
+		}
+		break;
+	case I2C_M_READ_COMBO:
+		if ((read_data_len == 0) || (write_data_len == 0)) {
+			EMSG("Invalid write or read length\n");
+			return -TEE_ERROR_BAD_PARAMETERS;
+		}
+		break;
+	default:
+		EMSG("Opteration not supported\n");
+		return -TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	if (dev_addr > 0x7F) {
@@ -186,7 +215,7 @@ static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, 
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
-	if ((data == NULL) && (data_len > 0)) {
+	if ((data == NULL) && ((write_data_len > 0) || (read_data_len > 0))) {
 		EMSG("Null data pointer\n");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
@@ -208,11 +237,13 @@ static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, 
 		addr_buf[i] = (addr >> (8 * (addr_len - 1 - i))) & 0xff;
 
 	/* Mark read combined operation */
-	if ((flags & I2C_M_READ) && addr_len) {
+	if ((flags == I2C_M_READ) && addr_len) {
 		flags = I2C_M_READ_COMBO;
 		dcnt = addr_len;
+	} else if ((flags == I2C_M_READ_COMBO) || (flags == I2C_M_WRITE)) {
+		dcnt = addr_len + write_data_len;
 	} else {
-		dcnt = addr_len + data_len;
+		dcnt = read_data_len;
 	}
 
 	if (dcnt >= 255) {
@@ -235,9 +266,9 @@ static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, 
 	if (addr_len) {
 		twi_reg_write(base + TWI_TXDATA8, *(addr_buf++));
 		addr_len--;
-	} else if (data_len && (flags & I2C_M_READ)) {
+	} else if (write_data_len) {
 		twi_reg_write(base + TWI_TXDATA8, *(data++));
-		data_len--;
+		write_data_len--;
 	}
 
 	/* Clear status bits */
@@ -257,7 +288,7 @@ static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, 
 		((twi_clk > 100) ? TWI_MSTRCTL_FAST : 0);
 	twi_reg_write(base + TWI_MSTRCTL, value);
 
-	ret = wait_for_completion(hi2c, flags, addr_buf, addr_len, data, data_len);
+	ret = wait_for_completion(hi2c, flags, addr_buf, addr_len, data, read_data, write_data_len, read_data_len);
 
 	if (ret) {
 		value = twi_reg_read(base + TWI_MSTRCTL) & ~TWI_MSTRCTL_EN;
@@ -277,14 +308,18 @@ static TEE_Result adi_twi_i2c_xfer(struct adi_i2c_handle *hi2c, uint32_t flags, 
 
 TEE_Result adi_twi_i2c_write(struct adi_i2c_handle *hi2c, uint8_t dev_addr, uint32_t addr, uint32_t addr_len, uint8_t *data, uint32_t data_len)
 {
-	return adi_twi_i2c_xfer(hi2c, I2C_M_WRITE, dev_addr, addr, addr_len, data, data_len);
+	return adi_twi_i2c_xfer(hi2c, I2C_M_WRITE, dev_addr, addr, addr_len, data, data_len, 0);
 }
 
 TEE_Result adi_twi_i2c_read(struct adi_i2c_handle *hi2c, uint8_t dev_addr, uint32_t addr, uint32_t addr_len, uint8_t *data, uint32_t data_len)
 {
-	return adi_twi_i2c_xfer(hi2c, I2C_M_READ, dev_addr, addr, addr_len, data, data_len);
+	return adi_twi_i2c_xfer(hi2c, I2C_M_READ, dev_addr, addr, addr_len, data, 0, data_len);
 }
 
+TEE_Result adi_twi_i2c_write_read(struct adi_i2c_handle *hi2c, uint8_t dev_addr, uint32_t addr, uint32_t addr_len, uint8_t *data, uint32_t write_data_len, uint32_t read_data_len)
+{
+	return adi_twi_i2c_xfer(hi2c, I2C_M_READ_COMBO, dev_addr, addr, addr_len, data, write_data_len, read_data_len);
+}
 
 TEE_Result adi_twi_i2c_init(struct adi_i2c_handle *hi2c)
 {
