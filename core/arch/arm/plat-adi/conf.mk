@@ -42,6 +42,9 @@ CFG_ADI_BOOT_PTA ?= y
 # Enable enforcement_counter TA
 CFG_ADI_ENFORCEMENT_COUNTER_PTA ?= y
 
+# Enable enforcement_counter_update TA
+CFG_ADI_ENFORCEMENT_COUNTER_UPDATE_PTA ?= y
+
 # Enable TE interface driver module
 CFG_ADI_TE_INTERFACE ?= y
 

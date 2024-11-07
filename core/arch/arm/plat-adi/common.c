@@ -37,7 +37,7 @@ static void init_anti_rollback_counter(void)
 
 	fdt = get_external_dt();
 	if (fdt != 0) {
-		offset = fdt_path_offset(fdt, "/boot");
+		offset = fdt_path_offset(fdt, "/boot/anti-rollback");
 		if (offset >= 0) {
 			prop = fdt_getprop(fdt, offset, "anti-rollback-counter", NULL);
 			if (prop != NULL)
@@ -57,7 +57,7 @@ static void init_te_anti_rollback_counter(void)
 
 	fdt = get_external_dt();
 	if (fdt != 0) {
-		offset = fdt_path_offset(fdt, "/boot");
+		offset = fdt_path_offset(fdt, "/boot/anti-rollback");
 		if (offset >= 0) {
 			prop = fdt_getprop(fdt, offset, "te-anti-rollback-counter", NULL);
 			if (prop != NULL)
@@ -71,8 +71,6 @@ static void init_bootrom_bypass_enable(void)
 	void *fdt;
 	int offset;
 	const fdt32_t *prop;
-
-	te_anti_rollback_counter = 0;
 
 	fdt = get_external_dt();
 	if (fdt != 0) {
@@ -118,6 +116,8 @@ void common_main_init_gic(void)
 	init_anti_rollback_counter();
 	init_te_anti_rollback_counter();
 	init_bootrom_bypass_enable();
+
+	if (bootrom_bypass_enabled) te_anti_rollback_counter = 0;
 }
 
 void itr_core_handler(void)
