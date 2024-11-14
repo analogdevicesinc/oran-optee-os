@@ -63,6 +63,9 @@ CFG_ADI_OTP_MACS_PTA ?= y
 # Enable alive-reply pseudo TA
 CFG_ADI_ALIVE_REPLY ?= y
 
+# Enable OTP temp sensor pseudo TA
+CFG_ADI_OTP_TEMP_PTA ?= y
+
 #
 # Platform-flavor-specific configurations
 #

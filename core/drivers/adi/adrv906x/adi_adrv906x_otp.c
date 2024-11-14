@@ -38,6 +38,13 @@
 #define ROLLBACK_COUNTER_NUM_COPIES     3  /* Anti-rollback counter is stored in triplicate */
 
 /*
+ * Temp sensor definitions
+ */
+#define TEMP_SENSOR_CHAN_REGS         2
+#define TEMP_SENSOR_SLOPE_MASK        0xFF
+#define TEMP_SENSOR_OFFSET_MASK       0x3F
+
+/*
  * MAC addresses
  */
 #define MAC_ADDRESS_NUM_BYTES           6
@@ -55,6 +62,16 @@
  * OTP Memory Map:
  *
  *          Data                   Address
+ * ------------------------------- OTP_TEMP_SENSOR_BASE
+ * CLKPLL Temp Sensor: Slope[7:0]--OTP_SLOT[7:0], and Offset[6:0]--OTP_SLOT[14:8]
+ * ENETPLL Temp Sensor: ~
+ * RF0PLL Temp Sensor: ~
+ * RF1PLL Temp Sensor: ~
+ * TX0 Temp Sensor: ~
+ * TX1 Temp Sensor: ~
+ * TX2 Temp Sensor: ~
+ * TX3 Temp Sensor: ~
+ *      ----
  * ------------------------------- OTP_ROLLBACK_COUNTER_BASE
  * Anti-rollback counter copy 1
  * Anti-rollback counter copy 2
@@ -69,6 +86,7 @@
  * Available
  * ------------------------------- OTP_OPEN_ZONE_END
  */
+#define OTP_TEMP_SENSOR_BASE            0x0114
 #define OTP_OPEN_ZONE_BASE              0x0600
 #define OTP_ROLLBACK_COUNTER_BASE       OTP_OPEN_ZONE_BASE
 #define OTP_ROLLBACK_COUNTER_END        (OTP_ROLLBACK_COUNTER_BASE + ROLLBACK_COUNTER_NUM_COPIES * ROLLBACK_COUNTER_NUM_REGS)
@@ -358,6 +376,21 @@ int adrv906x_otp_get_mac_addr(const uintptr_t mem_ctrl_base, uint8_t mac_number,
 
 	if (!get_most_common_mac((uint8_t *)&macs[0], num_macs, mac)) {
 		EMSG("%s: MAC %d read error. MAC is corrupted\n", __func__, mac_number);
+		return -EIO;
+	}
+
+	return ADI_OTP_SUCCESS;
+}
+
+int adrv906x_otp_get_temp_sensor(const uintptr_t mem_ctrl_base, adrv906x_temp_group_id_t temp_group_id, uint32_t *value)
+{
+	const uintptr_t addr = OTP_TEMP_SENSOR_BASE + (unsigned int)temp_group_id;
+
+	if (value == NULL)
+		return -EINVAL;
+
+	if (otp_read_burst(mem_ctrl_base, addr, value, 1, OTP_ECC_ON) != ADI_OTP_SUCCESS) {
+		EMSG("%s: Cannot read temp sensor at address 0x%lx\n", __func__, (unsigned long)addr);
 		return -EIO;
 	}
 
