@@ -15,5 +15,7 @@ uint32_t plat_get_sysclk_freq(void);
 uint32_t plat_get_anti_rollback_counter(void);
 uint32_t plat_get_te_anti_rollback_counter(void);
 bool plat_get_bootrom_bypass_enabled(void);
+void plat_error_message(const char *fmt, ...);
+void plat_warn_message(const char *fmt, ...);
 
 #endif /* COMMON_H */
