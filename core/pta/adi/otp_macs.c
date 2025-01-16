@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Analog Devices Inc.
+ * Copyright (c) 2025, Analog Devices Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,7 @@
 #include <tee_internal_api.h>
 
 #include <adrv906x_def.h>
+#include <common.h>
 
 #include <drivers/adi/adi_otp.h>
 #include <drivers/adi/adrv906x/adi_adrv906x_otp.h>
@@ -84,13 +85,13 @@ static TEE_Result otp_macs_check_params(uint32_t param_types, TEE_Param params[T
 	uint8_t interface;
 
 	if (param_types != exp_param_types) {
-		EMSG("%s Bad parameters", TA_NAME);
+		plat_runtime_error_message("%s Bad parameters", TA_NAME);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	interface = params[OP_PARAM_INTERFACE].value.a;
 	if (interface == 0 || interface > NUM_MAC_ADDRESSES) {
-		EMSG("%s Invalid MAC id '%u' (expected 1-%u)", TA_NAME, interface, NUM_MAC_ADDRESSES);
+		plat_runtime_error_message("%s Invalid MAC id '%u' (expected 1-%u)", TA_NAME, interface, NUM_MAC_ADDRESSES);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -113,7 +114,7 @@ static TEE_Result otp_macs_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 		/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
 		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
 		if (!base) {
-			EMSG("%s READ MMU address mapping failure", TA_NAME);
+			plat_runtime_error_message("%s READ MMU address mapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 		base_is_new_mmu_map = true;
@@ -124,7 +125,7 @@ static TEE_Result otp_macs_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 	if (base_is_new_mmu_map) {
 		/* MMU remove mapping */
 		if (core_mmu_remove_mapping(MEM_AREA_IO_SEC, (void *)base, SMALL_PAGE_SIZE) != TEE_SUCCESS) {
-			EMSG("%s READ MMU address unmapping failure", TA_NAME);
+			plat_runtime_error_message("%s READ MMU address unmapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 	}
@@ -164,7 +165,7 @@ static TEE_Result otp_macs_write_handler(TEE_Param params[TEE_NUM_PARAMS])
 		/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
 		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
 		if (!base) {
-			EMSG("%s WRITE MMU address mapping failure", TA_NAME);
+			plat_runtime_error_message("%s WRITE MMU address mapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 		base_is_new_mmu_map = true;
@@ -177,7 +178,7 @@ static TEE_Result otp_macs_write_handler(TEE_Param params[TEE_NUM_PARAMS])
 			/* No MAC in OTP, we can store the new MAC */
 			ret = adrv906x_otp_set_mac_addr(base, interface, mac);
 		} else {
-			EMSG("%s: OTP already contains a MAC for interface %u. MAC write aborted\n", TA_NAME, interface);
+			plat_runtime_error_message("%s: OTP already contains a MAC for interface %u. MAC write aborted", TA_NAME, interface);
 			ret = ADI_OTP_FAILURE;
 		}
 	}
@@ -185,7 +186,7 @@ static TEE_Result otp_macs_write_handler(TEE_Param params[TEE_NUM_PARAMS])
 	if (base_is_new_mmu_map) {
 		/* MMU remove mapping */
 		if (core_mmu_remove_mapping(MEM_AREA_IO_SEC, (void *)base, SMALL_PAGE_SIZE) != TEE_SUCCESS) {
-			EMSG("%s WRITE MMU address unmapping failure", TA_NAME);
+			plat_runtime_error_message("%s WRITE MMU address unmapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 	}
@@ -207,7 +208,7 @@ static TEE_Result invoke_command(void *psess __unused,
 {
 	/* Check command */
 	if (cmd != TA_OTP_MACS_CMD_READ && cmd != TA_OTP_MACS_CMD_WRITE) {
-		EMSG("Invalid command");
+		plat_runtime_error_message("Invalid command");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 

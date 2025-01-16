@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Analog Devices Inc.
+ * Copyright (c) 2025, Analog Devices Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,10 @@
 
 #include <drivers/adi/adi_te_interface.h>
 #include <adrv906x_def.h>
+#include <common.h>
 #include "adimem.h"
+
+#include <runtime_log.h>
 
 #define TA_NAME "adimem.ta"
 
@@ -69,7 +72,7 @@ static TEE_Result adimem_check_params(uint32_t param_types, TEE_Param params[TEE
 	size_t size = params[OP_PARAM_SIZE].value.a;
 
 	if (param_types != exp_param_types) {
-		EMSG("Bad parameters");
+		plat_runtime_error_message("Bad parameters");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -78,7 +81,7 @@ static TEE_Result adimem_check_params(uint32_t param_types, TEE_Param params[TEE
 	case 16: break;
 	case 32: break;
 	default:
-		EMSG("%s Invalid data size '%lu'", TA_NAME, size);
+		plat_runtime_error_message("%s Invalid data size '%lu'", TA_NAME, size);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -103,7 +106,7 @@ static TEE_Result adimem_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 		/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
 		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, address, size);
 		if (!base) {
-			EMSG("%s READ  MMU address mapping failure", TA_NAME);
+			plat_runtime_error_message("%s READ  MMU address mapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 		base_is_new_mmu_map = true;
@@ -120,7 +123,7 @@ static TEE_Result adimem_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 	if (base_is_new_mmu_map) {
 		/* MMU remove mapping */
 		if (core_mmu_remove_mapping(MEM_AREA_IO_SEC, (void *)base, size) != TEE_SUCCESS) {
-			EMSG("%s READ MMU address unmapping failure", TA_NAME);
+			plat_runtime_error_message("%s READ MMU address unmapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 	}
@@ -154,7 +157,7 @@ static TEE_Result adimem_write_handler(TEE_Param params[TEE_NUM_PARAMS])
 		/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
 		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, address, size);
 		if (!base) {
-			EMSG("%s WRITE MMU address mapping failure", TA_NAME);
+			plat_runtime_error_message("%s WRITE MMU address mapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 		base_is_new_mmu_map = true;
@@ -172,7 +175,7 @@ static TEE_Result adimem_write_handler(TEE_Param params[TEE_NUM_PARAMS])
 	if (base_is_new_mmu_map) {
 		/* MMU remove mapping */
 		if (core_mmu_remove_mapping(MEM_AREA_IO_SEC, (void *)base, size) != TEE_SUCCESS) {
-			EMSG("%s WRITE MMU address unmapping failure", TA_NAME);
+			plat_runtime_error_message("%s WRITE MMU address unmapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 	}
@@ -234,7 +237,7 @@ static TEE_Result invoke_command(void *psess __unused,
 
 	/* Check command */
 	if (cmd != TA_ADIMEM_CMD_READ && cmd != TA_ADIMEM_CMD_WRITE) {
-		EMSG("Invalid command");
+		plat_runtime_error_message("Invalid command");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -274,7 +277,7 @@ static TEE_Result invoke_command(void *psess __unused,
 		 * be running as non-root).
 		 */
 		if (access_allowed) {
-			EMSG("Access denied. Re-run as non-privileged.");
+			plat_runtime_error_message("Access denied. Re-run as non-privileged.");
 			return TEE_ERROR_BAD_PARAMETERS;
 		}
 
@@ -283,7 +286,7 @@ static TEE_Result invoke_command(void *psess __unused,
 	}
 
 	if (!access_allowed) {
-		EMSG("Access denied.");
+		plat_runtime_error_message("Access denied.");
 		return TEE_ERROR_ACCESS_DENIED;
 	}
 

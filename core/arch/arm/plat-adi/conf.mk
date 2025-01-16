@@ -66,6 +66,9 @@ CFG_ADI_ALIVE_REPLY ?= y
 # Enable OTP temp sensor pseudo TA
 CFG_ADI_OTP_TEMP_PTA ?= y
 
+# Enable runtime log
+CFG_ADI_RUNTIME_LOG_PTA ?= y
+
 #
 # Platform-flavor-specific configurations
 #

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Analog Devices Inc.
+ * Copyright (c) 2025, Analog Devices Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,10 @@
 #include <kernel/pseudo_ta.h>
 #include <mm/core_memprot.h>
 #include <tee_internal_api.h>
+
 #include <adrv906x_def.h>
+#include <common.h>
+
 #include <drivers/adi/adi_otp.h>
 #include <drivers/adi/adrv906x/adi_adrv906x_otp.h>
 
@@ -72,13 +75,13 @@ static TEE_Result otp_temp_check_params(uint32_t param_types, TEE_Param params[T
 	uint8_t temp_group_id;
 
 	if (param_types != exp_param_types) {
-		EMSG("%s Bad parameters", TA_NAME);
+		plat_runtime_error_message("%s Bad parameters", TA_NAME);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	temp_group_id = params[OP_PARAM_TEMP_GROUP_ID].value.a;
 	if (temp_group_id >= TEMP_SENSOR_OTP_SLOT_NUM) {
-		EMSG("%s Invalid temp group id '%u'", TA_NAME, temp_group_id);
+		plat_runtime_error_message("%s Invalid temp group id '%u'", TA_NAME, temp_group_id);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -102,7 +105,7 @@ static TEE_Result otp_temp_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 		/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
 		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
 		if (!base) {
-			EMSG("%s READ MMU address mapping failure", TA_NAME);
+			plat_runtime_error_message("%s READ MMU address mapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 		base_is_new_mmu_map = true;
@@ -113,7 +116,7 @@ static TEE_Result otp_temp_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 	if (base_is_new_mmu_map) {
 		/* MMU remove mapping */
 		if (core_mmu_remove_mapping(MEM_AREA_IO_SEC, (void *)base, SMALL_PAGE_SIZE) != TEE_SUCCESS) {
-			EMSG("%s READ MMU address unmapping failure", TA_NAME);
+			plat_runtime_error_message("%s READ MMU address unmapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;
 		}
 	}
@@ -136,7 +139,7 @@ static TEE_Result invoke_command(void *psess __unused,
 {
 	/* Check command */
 	if (cmd != TA_OTP_TEMP_CMD_READ && cmd != TA_OTP_TEMP_CMD_WRITE) {
-		EMSG("Invalid command");
+		plat_runtime_error_message("Invalid command");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 

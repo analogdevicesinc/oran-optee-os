@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Analog Devices Inc.
+ * Copyright (c) 2025, Analog Devices Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -137,7 +137,7 @@ static bool adi_i2c_verify_access(uint32_t cmd)
 	default:
 		break;
 	}
-	EMSG("Invalid operation\n");
+	plat_runtime_error_message("Invalid operation");
 	return false;
 }
 
@@ -153,42 +153,42 @@ static TEE_Result adi_i2c_check_params(uint32_t param_types, uint32_t cmd)
 	switch (cmd) {
 	case TA_ADI_I2C_GET:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT, TEE_PARAM_TYPE_MEMREF_OUTPUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters\n");
+			plat_runtime_error_message("Bad parameters to I2C get command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		}
 		break;
 	case TA_ADI_I2C_SET:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT, TEE_PARAM_TYPE_MEMREF_INPUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters\n");
+			plat_runtime_error_message("Bad parameters to I2C set command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		}
 		break;
 	case TA_ADI_I2C_SET_GET:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT, TEE_PARAM_TYPE_MEMREF_INOUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters\n");
+			plat_runtime_error_message("Bad parameters to I2C set get command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		}
 		break;
 	default:
-		EMSG("Invalid command\n");
+		plat_runtime_error_message("Invalid command");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	/* Verify I2C bus, slave, and address */
 	if (!adi_i2c_verify_access(cmd)) {
-		EMSG("Access not permitted for specified bus, slave, address, and operation\n");
+		plat_runtime_error_message("Access not permitted for specified bus, slave, address, and operation");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	/* Verify I2C speed */
 	if ((speed < I2C_SPEED_MIN) || (speed > I2C_SPEED_MAX)) {
-		EMSG("Invalid I2C speed: %ld\n", speed);
+		plat_runtime_error_message("Invalid I2C speed: %ld", speed);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
 	/* Verify buffer size is within range */
 	if (num_set_bytes > ADI_I2C_MAX_BYTES || num_get_bytes > ADI_I2C_MAX_BYTES) {
-		EMSG("Number of bytes specified is above the limit of %d\n", ADI_I2C_MAX_BYTES);
+		plat_runtime_error_message("Number of bytes specified is above the limit of %d", ADI_I2C_MAX_BYTES);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -212,7 +212,7 @@ static TEE_Result i2c_set(TEE_Param params[TEE_NUM_PARAMS])
 
 	buf = malloc(num_bytes);
 	if (buf == NULL) {
-		EMSG("Error creating buffer\n");
+		plat_runtime_error_message("Error creating buffer");
 		return TEE_ERROR_GENERIC;
 	}
 
@@ -234,7 +234,7 @@ static TEE_Result i2c_set(TEE_Param params[TEE_NUM_PARAMS])
 
 	ret = adi_twi_i2c_init(&hi2c);
 	if (ret < 0) {
-		EMSG("I2C init error\n");
+		plat_runtime_error_message("I2C init error");
 		free(buf);
 		return TEE_ERROR_GENERIC;
 	}
@@ -242,7 +242,7 @@ static TEE_Result i2c_set(TEE_Param params[TEE_NUM_PARAMS])
 	/* Execute I2C write */
 	ret = adi_twi_i2c_write(&hi2c, slave, addr, addr_len, buf, num_bytes);
 	if (ret < 0) {
-		EMSG("I2C write error\n");
+		plat_runtime_error_message("I2C write error");
 		free(buf);
 		return TEE_ERROR_GENERIC;
 	}
@@ -268,7 +268,7 @@ static TEE_Result i2c_get(TEE_Param params[TEE_NUM_PARAMS])
 
 	buf = malloc(num_bytes);
 	if (buf == NULL) {
-		EMSG("Error creating buffer\n");
+		plat_runtime_error_message("Error creating buffer");
 		return TEE_ERROR_GENERIC;
 	}
 
@@ -287,7 +287,7 @@ static TEE_Result i2c_get(TEE_Param params[TEE_NUM_PARAMS])
 
 	ret = adi_twi_i2c_init(&hi2c);
 	if (ret < 0) {
-		EMSG("I2C init error\n");
+		plat_runtime_error_message("I2C init error");
 		free(buf);
 		return TEE_ERROR_GENERIC;
 	}
@@ -295,7 +295,7 @@ static TEE_Result i2c_get(TEE_Param params[TEE_NUM_PARAMS])
 	/* Execute I2C read */
 	ret = adi_twi_i2c_read(&hi2c, slave, addr, addr_len, buf, num_bytes);
 	if (ret < 0) {
-		EMSG("I2C read error\n");
+		plat_runtime_error_message("I2C read error");
 		free(buf);
 		return TEE_ERROR_GENERIC;
 	}
@@ -327,7 +327,7 @@ static TEE_Result i2c_set_get(TEE_Param params[TEE_NUM_PARAMS])
 
 	buf = malloc(buf_bytes);
 	if (buf == NULL) {
-		EMSG("Error creating buffer\n");
+		plat_runtime_error_message("Error creating buffer");
 		return TEE_ERROR_GENERIC;
 	}
 
@@ -349,7 +349,7 @@ static TEE_Result i2c_set_get(TEE_Param params[TEE_NUM_PARAMS])
 
 	ret = adi_twi_i2c_init(&hi2c);
 	if (ret < 0) {
-		EMSG("I2C init error\n");
+		plat_runtime_error_message("I2C init error");
 		free(buf);
 		return TEE_ERROR_GENERIC;
 	}
@@ -357,7 +357,7 @@ static TEE_Result i2c_set_get(TEE_Param params[TEE_NUM_PARAMS])
 	/* Execute I2C read */
 	ret = adi_twi_i2c_write_read(&hi2c, slave, addr, addr_len, buf, num_set_bytes, num_get_bytes);
 	if (ret < 0) {
-		EMSG("I2C read error\n");
+		plat_runtime_error_message("I2C read error");
 		free(buf);
 		return TEE_ERROR_GENERIC;
 	}

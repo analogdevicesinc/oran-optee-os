@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2024, Analog Devices Incorporated. All rights reserved.
+ * Copyright (c) 2025, Analog Devices Incorporated. All rights reserved.
  */
 
 #include <io.h>
@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <adrv906x_util.h>
+#include <common.h>
 #include <drivers/adi/adi_te_interface.h>
 
 #define TA_NAME         "te_mailbox.ta"
@@ -37,27 +38,27 @@ static TEE_Result adi_te_mailbox_check_params(uint32_t param_types, uint32_t cmd
 	switch (cmd) {
 	case PROV_HOST_KEY_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT, TEE_PARAM_TYPE_VALUE_INPUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters");
+			plat_runtime_error_message("Bad parameters to provision host key command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
 		}
 	case PROV_PREP_FINALIZE_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters");
+			plat_runtime_error_message("Bad parameters to provision prepare finalize command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
 		}
 	case PROV_FINALIZE_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters");
+			plat_runtime_error_message("Bad parameters to provision finalize command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
 		}
 	default:
-		EMSG("Invalid command\n");
+		plat_runtime_error_message("Invalid command");
 		break;
 	}
 	return TEE_SUCCESS;
@@ -99,7 +100,7 @@ static TEE_Result adi_te_mailbox_check_lifecycle_state(uint32_t cmd)
 		}
 		return TEE_SUCCESS;
 	default:
-		EMSG("Invalid command\n");
+		plat_runtime_error_message("Invalid command");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -121,18 +122,18 @@ static TEE_Result te_mailbox(uint32_t cmd, TEE_Param params[4])
 		case HST_SEC_BOOT:
 		case HST_PLLSA:
 			if (key_len != 32) {
-				EMSG("Invalid key size\n");
+				plat_runtime_error_message("Invalid key size");
 				return TEE_ERROR_BAD_PARAMETERS;
 			}
 			break;
 		case HST_IPK:
 			if (key_len != 16) {
-				EMSG("Invalid key size\n");
+				plat_runtime_error_message("Invalid key size");
 				return TEE_ERROR_BAD_PARAMETERS;
 			}
 			break;
 		default:
-			EMSG("Invalid key id\n");
+			plat_runtime_error_message("Invalid key id");
 			return TEE_ERROR_BAD_PARAMETERS;
 		}
 
@@ -140,7 +141,7 @@ static TEE_Result te_mailbox(uint32_t cmd, TEE_Param params[4])
 		key_buf = malloc(key_len);
 
 		if (key_buf == NULL) {
-			EMSG("Error creating buffer for key to provision\n");
+			plat_runtime_error_message("Error creating buffer for key to provision");
 			return TEE_ERROR_GENERIC;
 		}
 
@@ -189,7 +190,7 @@ static TEE_Result te_mailbox(uint32_t cmd, TEE_Param params[4])
 
 		break;
 	default:
-		EMSG("Invalid TE Mailbox API\n");
+		plat_runtime_error_message("Invalid TE Mailbox API");
 		free(key_buf);
 		return TEE_ERROR_BAD_PARAMETERS;
 		break;

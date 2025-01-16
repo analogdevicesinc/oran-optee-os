@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Analog Devices Inc.
+ * Copyright (c) 2025, Analog Devices Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,8 @@
 #include <mm/core_memprot.h>
 #include <string.h>
 #include <tee_internal_api.h>
+
+#include <common.h>
 
 #include "adi_memdump.h"
 
@@ -76,21 +78,21 @@ static TEE_Result adi_memdump_check_params(uint32_t param_types, uint32_t cmd)
 	switch (cmd) {
 	case TA_ADI_MEMDUMP_RECORDS_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters");
+			plat_runtime_error_message("Bad parameters to memdump records command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
 		}
 	case TA_ADI_MEMDUMP_SIZE_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT, TEE_PARAM_TYPE_VALUE_OUTPUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
-			EMSG("Bad parameters");
+			plat_runtime_error_message("Bad parameters to memdump size command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
 		}
 	case TA_ADI_MEMDUMP_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_OUTPUT, TEE_PARAM_TYPE_VALUE_INOUT, TEE_PARAM_TYPE_VALUE_OUTPUT, TEE_PARAM_TYPE_VALUE_OUTPUT)) {
-			EMSG("Bad parameters");
+			plat_runtime_error_message("Bad parameters to memdump command");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
@@ -168,7 +170,7 @@ static TEE_Result adi_memdump_handler(TEE_Param params[TEE_NUM_PARAMS])
 
 	/* Check validity of record number */
 	if (!valid_record_num(record_num)) {
-		EMSG("Invalid record number %d\n", record_num);
+		plat_runtime_error_message("Invalid record number %d", record_num);
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
@@ -177,7 +179,7 @@ static TEE_Result adi_memdump_handler(TEE_Param params[TEE_NUM_PARAMS])
 
 	/* Verify record size is a multiple of width */
 	if ((record.cpu_mem_size * 8 % record.cpu_mem_width) != 0) {
-		EMSG("Size of record is not a multiple of width\n");
+		plat_runtime_error_message("Size of record is not a multiple of width");
 		return TEE_ERROR_GENERIC;
 	}
 
@@ -203,7 +205,7 @@ static TEE_Result adi_memdump_handler(TEE_Param params[TEE_NUM_PARAMS])
 				*((uint8_t *)params[OP_PARAM_BUFFER].memref.buffer + i) = value;
 			} else {
 				/* Only supports 8, 16, and 32 bit registers */
-				EMSG("Not a valid register width %d\n", record.cpu_mem_width);
+				plat_runtime_error_message("Not a valid register width %d", record.cpu_mem_width);
 				return TEE_ERROR_GENERIC;
 			}
 
@@ -218,7 +220,7 @@ static TEE_Result adi_memdump_handler(TEE_Param params[TEE_NUM_PARAMS])
 			/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
 			base = core_mmu_add_mapping(MEM_AREA_IO_SEC, tmp_address, record.cpu_mem_width);
 			if (!base) {
-				EMSG("%s READ MMU address mapping failure", TA_NAME);
+				plat_runtime_error_message("%s READ MMU address mapping failure", TA_NAME);
 				return TEE_ERROR_GENERIC;
 			}
 			base_is_new_mmu_map = true;
@@ -251,7 +253,7 @@ static TEE_Result adi_memdump_handler(TEE_Param params[TEE_NUM_PARAMS])
 			*((uint8_t *)params[OP_PARAM_BUFFER].memref.buffer + i) = value;
 		} else {
 			/* Only supports 8, 16, and 32 bit registers */
-			EMSG("Not a valid register width %d\n", record.cpu_mem_width);
+			plat_runtime_error_message("Not a valid register width %d", record.cpu_mem_width);
 
 			/* Remove mmu mapping and return error */
 			if (base_is_new_mmu_map)
@@ -265,7 +267,7 @@ static TEE_Result adi_memdump_handler(TEE_Param params[TEE_NUM_PARAMS])
 		if (base_is_new_mmu_map) {
 			/* MMU remove mapping */
 			if (core_mmu_remove_mapping(MEM_AREA_IO_SEC, (void *)base, record.cpu_mem_width) != TEE_SUCCESS) {
-				EMSG("%s READ  MMU address unmapping failure", TA_NAME);
+				plat_runtime_error_message("%s READ  MMU address unmapping failure", TA_NAME);
 				return TEE_ERROR_GENERIC;
 			}
 		}
@@ -289,7 +291,7 @@ static TEE_Result invoke_command(void *psess __unused,
 {
 	/* Check command */
 	if (cmd != TA_ADI_MEMDUMP_RECORDS_CMD && cmd != TA_ADI_MEMDUMP_CMD && cmd != TA_ADI_MEMDUMP_SIZE_CMD) {
-		EMSG("Invalid command");
+		plat_runtime_error_message("Invalid command");
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 

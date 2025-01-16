@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2024 Analog Devices Incorporated
+ * Copyright (c) 2025 Analog Devices Incorporated
  */
 
 #include <console.h>
@@ -16,6 +16,7 @@
 #include <platform_config.h>
 #include <printk.h>
 #include <rng_support.h>
+#include <runtime_log.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -227,6 +228,45 @@ void __printf(1, 2) plat_warn_message(const char *fmt, ...){
 	va_end(args);
 
 	plat_log_dt_message("W/TC: ", message);
+	IMSG("WARNING: %s\n", message);
+}
+
+/* Log runtime message */
+static void plat_log_runtime_message(const char *label, char *message)
+{
+	char log[MAX_NODE_STRING_LENGTH + 6];
+
+	/* Add label to beginning of message */
+	memcpy(log, label, strlen(label));
+	memcpy(log + strlen(label), message, strlen(message) + 1);
+
+	/* Log to runtime buffer */
+	write_to_runtime_buffer(log);
+}
+
+/* Record runtime error message */
+void __printf(1, 2) plat_runtime_error_message(const char *fmt, ...){
+	char message[MAX_NODE_STRING_LENGTH];
+	va_list args;
+
+	va_start(args, fmt);
+	vsnprintf(message, MAX_NODE_STRING_LENGTH, fmt, args);
+	va_end(args);
+
+	plat_log_runtime_message("E/TC: ", message);
+	EMSG("%s\n", message);
+}
+
+/* Record runtime warning message */
+void __printf(1, 2) plat_runtime_warn_message(const char *fmt, ...){
+	char message[MAX_NODE_STRING_LENGTH];
+	va_list args;
+
+	va_start(args, fmt);
+	vsnprintf(message, MAX_NODE_STRING_LENGTH, fmt, args);
+	va_end(args);
+
+	plat_log_runtime_message("W/TC: ", message);
 	IMSG("WARNING: %s\n", message);
 }
 
