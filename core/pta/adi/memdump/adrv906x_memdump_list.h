@@ -8,7 +8,7 @@
 
 #include "adi_memdump.h"
 
-extern const memdump_registers_t memdump_primary_list[5086];
-extern const memdump_registers_t memdump_secondary_list[5086];
+extern const memdump_registers_t memdump_primary_list[5150];
+extern const memdump_registers_t memdump_secondary_list[5150];
 
 #endif /* ADRV906X_MEMDUMP_LIST_H */
