@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2022, Analog Devices Incorporated. All rights reserved.
+ * Copyright (c) 2025, Analog Devices Incorporated. All rights reserved.
  */
 
 #include <io.h>
@@ -31,6 +31,9 @@ typedef enum {
 	WATCHDOG_RESET,
 	CACHE_ECC_ERROR,
 	DRAM_ECC_ERROR,
+	DRAM_INIT_ERROR,
+	MCS_FAIL,
+	MBIAS_CAL_FAIL,
 	OTHER_RESET_CAUSE,
 } reset_cause_t;
 

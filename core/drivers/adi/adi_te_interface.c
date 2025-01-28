@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2023, Analog Devices Incorporated. All rights reserved.
+ * Copyright (c) 2025, Analog Devices Incorporated. All rights reserved.
  */
 
 #include <assert.h>
@@ -75,6 +75,20 @@ adi_lifecycle_t adi_enclave_get_lifecycle_state(uintptr_t base_addr)
 	vaddr_t va = (vaddr_t)phys_to_virt_io(base_addr, ADI_TE_MAILBOX_REG_SIZE);
 
 	return (io_read32(va + MB_REGS_LIFECYCLE_STATUS) & MB_REGS_LIFECYCLE_ENCODE_MASK) >> MB_REGS_LIFECYCLE_ENCODE_BITP;
+}
+
+uint32_t adi_enclave_get_boot_flow0(uintptr_t base_addr)
+{
+	vaddr_t va = (vaddr_t)phys_to_virt_io(base_addr, ADI_TE_MAILBOX_REG_SIZE);
+
+	return io_read32(va + MB_REGS_BOOT_FLOW0);
+}
+
+uint32_t adi_enclave_get_boot_flow1(uintptr_t base_addr)
+{
+	vaddr_t va = (vaddr_t)phys_to_virt_io(base_addr, ADI_TE_MAILBOX_REG_SIZE);
+
+	return io_read32(va + MB_REGS_BOOT_FLOW1);
 }
 
 static void ack_response(uintptr_t base_addr)

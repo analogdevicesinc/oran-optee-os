@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Analog Devices Incorporated, All Rights Reserved
+ * Copyright (c) 2025, Analog Devices Incorporated, All Rights Reserved
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -42,6 +42,8 @@ typedef enum {
 } HST_KEY_ID;
 
 adi_lifecycle_t adi_enclave_get_lifecycle_state(uintptr_t base_addr);
+uint32_t adi_enclave_get_boot_flow0(uintptr_t base_addr);
+uint32_t adi_enclave_get_boot_flow1(uintptr_t base_addr);
 int adi_enclave_get_mailbox_version(uintptr_t base_addr);
 int adi_enclave_get_enclave_version(uintptr_t base_addr, uint8_t *output_buffer, uint32_t *o_buff_len);
 int adi_enclave_get_api_version(uintptr_t base_addr, uint8_t *output_buffer, uint32_t *o_buff_len);

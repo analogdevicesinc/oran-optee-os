@@ -26,9 +26,14 @@
 		} \
 	}
 
+/* Commands */
 #define PROV_HOST_KEY_CMD            0
 #define PROV_PREP_FINALIZE_CMD            1
 #define PROV_FINALIZE_CMD            2
+#define BOOT_FLOW_REG_READ            3
+
+/* Parameters for BOOT_FLOW_REG_READ */
+#define OP_PARAM_BOOT_FLOW              0
 
 /*
  * adi_te_mailbox_check_params - verify the received parameters are of the expected types
@@ -53,6 +58,13 @@ static TEE_Result adi_te_mailbox_check_params(uint32_t param_types, uint32_t cmd
 	case PROV_FINALIZE_CMD:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
 			plat_runtime_error_message("Bad parameters to provision finalize command");
+			return TEE_ERROR_BAD_PARAMETERS;
+		} else {
+			return TEE_SUCCESS;
+		}
+	case BOOT_FLOW_REG_READ:
+		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE)) {
+			plat_runtime_error_message("Bad parameters to boot flow reg read");
 			return TEE_ERROR_BAD_PARAMETERS;
 		} else {
 			return TEE_SUCCESS;
@@ -100,8 +112,8 @@ static TEE_Result adi_te_mailbox_check_lifecycle_state(uint32_t cmd)
 		}
 		return TEE_SUCCESS;
 	default:
-		plat_runtime_error_message("Invalid command");
-		return TEE_ERROR_BAD_PARAMETERS;
+		/* For all other commands, the lifecycle state doesn't need to be verified */
+		return TEE_SUCCESS;
 	}
 
 	return TEE_ERROR_GENERIC;
@@ -189,6 +201,12 @@ static TEE_Result te_mailbox(uint32_t cmd, TEE_Param params[4])
 			ret = adi_enclave_provision_finalize(SEC_TE_MAILBOX_BASE);
 
 		break;
+	case BOOT_FLOW_REG_READ:
+		params[OP_PARAM_BOOT_FLOW].value.a = adi_enclave_get_boot_flow0(TE_MAILBOX_BASE);;
+		params[OP_PARAM_BOOT_FLOW].value.b = adi_enclave_get_boot_flow1(TE_MAILBOX_BASE);
+
+		return TEE_SUCCESS;
+		break;
 	default:
 		plat_runtime_error_message("Invalid TE Mailbox API");
 		free(key_buf);
@@ -215,13 +233,13 @@ static TEE_Result invoke_command(void *psess __unused,
 				 uint32_t cmd, uint32_t ptypes,
 				 TEE_Param params[TEE_NUM_PARAMS] __unused)
 {
-	/* Check lifecycle state */
-	if (adi_te_mailbox_check_lifecycle_state(cmd) != TEE_SUCCESS)
-		return TEE_ERROR_BAD_STATE;
-
 	/* Check parameters */
 	if (adi_te_mailbox_check_params(ptypes, cmd) != TEE_SUCCESS)
 		return TEE_ERROR_BAD_PARAMETERS;
+
+	/* Check lifecycle state */
+	if (adi_te_mailbox_check_lifecycle_state(cmd) != TEE_SUCCESS)
+		return TEE_ERROR_BAD_STATE;
 
 	return te_mailbox(cmd, params);
 }
