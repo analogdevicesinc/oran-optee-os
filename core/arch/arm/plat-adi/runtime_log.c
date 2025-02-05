@@ -18,6 +18,8 @@
 #define ADI_RUNTIME_LOG_SMC_RETURN_SUCCESS                  (0U)
 #define ADI_RUNTIME_LOG_SMC_RETURN_UNSUPPORTED_REQUEST      (0xFFFFFFFFFFFFFFFFU)
 
+#define GROUP_SEPARATOR '\x1D'  /* ASCII Group Separator */
+
 static int buffer_length = 0;
 static int read_index = 0;
 static char runtime_log[SIZE_OF_OPTEE_RUNTIME_BUFFER] = { 0 };
@@ -84,7 +86,7 @@ void write_to_runtime_buffer(const char *message)
 	}
 
 	/* Write termination character to buffer */
-	write_char_to_buffer('\r');
+	write_char_to_buffer(GROUP_SEPARATOR);
 
 	/* Unlock */
 	lock = false;

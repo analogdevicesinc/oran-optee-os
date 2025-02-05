@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2023, Analog Devices Incorporated. All rights reserved.
+ * Copyright (c) 2025, Analog Devices Incorporated. All rights reserved.
  */
 
 #include <io.h>
 #include <kernel/pseudo_ta.h>
 #include <mm/core_memprot.h>
+
 #include <adrv906x_util.h>
+#include <common.h>
 
 #define TA_NAME         "secondary_launcher.ta"
 
@@ -40,11 +42,11 @@ static TEE_Result set_boot_successful(void)
 			io_write32(addr, reg);
 			IMSG("Done\n");
 		} else {
-			IMSG("Refusing to initiate secondary boot. Not configured to boot Linux on secondary tile.\n");
+			plat_runtime_error_message("Refusing to initiate secondary boot. Not configured to boot Linux on secondary tile.");
 			return TEE_ERROR_GENERIC;
 		}
 	} else {
-		IMSG("Refusing to initiate secondary boot. Not a dual-tile system.\n");
+		plat_runtime_error_message("Refusing to initiate secondary boot. Not a dual-tile system.");
 		return TEE_ERROR_GENERIC;
 	}
 
