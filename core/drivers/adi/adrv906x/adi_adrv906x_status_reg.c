@@ -26,7 +26,8 @@
  * TF-A: /plat/adi/adrv/common/include/plat_status_reg.h
  */
 typedef enum {
-	RESET_VALUE,
+	COLD_BOOT,
+	WARM_RESET,
 	IMG_VERIFY_FAIL,
 	WATCHDOG_RESET,
 	CACHE_ECC_ERROR,
