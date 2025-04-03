@@ -32,6 +32,7 @@
 #include <tee_internal_api.h>
 
 #include <adrv906x_def.h>
+#include <adrv906x_util.h>
 #include <common.h>
 
 #include <drivers/adi/adi_otp.h>
@@ -56,8 +57,12 @@
 	}
 
 /* Op parameter offsets */
-#define OP_PARAM_TEMP_GROUP_ID   0
-#define OP_PARAM_TEMP_VALUE      1
+#define OP_PARAM_TEMP_GROUP_ID  0
+#define OP_PARAM_TEMP_VALUE     1
+#define OP_PARAM_TILE   2
+
+#define PRIMARY_TILE    0
+#define SECONDARY_TILE  1
 
 /* The function IDs implemented in this TA */
 enum ta_otp_temp_cmds {
@@ -71,7 +76,8 @@ enum ta_otp_temp_cmds {
  */
 static TEE_Result otp_temp_check_params(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS])
 {
-	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT, TEE_PARAM_TYPE_VALUE_INOUT, TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE);
+	uint32_t exp_param_types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT, TEE_PARAM_TYPE_VALUE_INOUT, TEE_PARAM_TYPE_VALUE_INPUT, TEE_PARAM_TYPE_NONE);
+	uint32_t tile = params[OP_PARAM_TILE].value.a;
 	uint8_t temp_group_id;
 
 	if (param_types != exp_param_types) {
@@ -85,6 +91,11 @@ static TEE_Result otp_temp_check_params(uint32_t param_types, TEE_Param params[T
 		return TEE_ERROR_BAD_PARAMETERS;
 	}
 
+	if ((tile == SECONDARY_TILE && !plat_is_dual_tile()) || (tile > SECONDARY_TILE)) {
+		plat_runtime_error_message("%s Invalid tile id '%u'", TA_NAME, tile);
+		return TEE_ERROR_BAD_PARAMETERS;
+	}
+
 	return TEE_SUCCESS;
 }
 
@@ -94,16 +105,30 @@ static TEE_Result otp_temp_check_params(uint32_t param_types, TEE_Param params[T
 static TEE_Result otp_temp_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 {
 	vaddr_t base;
+	paddr_t otp_base;
 	adrv906x_temp_group_id_t temp_group_id = (adrv906x_temp_group_id_t)params[OP_PARAM_TEMP_GROUP_ID].value.a;
 	uint32_t value;
+	uint32_t tile = params[OP_PARAM_TILE].value.a;
 
 	bool base_is_new_mmu_map = false;
 	int ret;
 
-	base = (vaddr_t)phys_to_virt_io(OTP_BASE, SMALL_PAGE_SIZE);
+	switch (tile) {
+	case PRIMARY_TILE:
+		otp_base = OTP_BASE;
+		break;
+	case SECONDARY_TILE:
+		otp_base = SEC_OTP_BASE;
+		break;
+	default:
+		plat_runtime_error_message("%s Invalid tile id '%u'", TA_NAME, tile);
+		return TEE_ERROR_BAD_PARAMETERS;
+	}
+
+	base = (vaddr_t)phys_to_virt_io(otp_base, SMALL_PAGE_SIZE);
 	if (!base) {
 		/* MMU add mapping, to support addresses not registered with "register_phys_mem" */
-		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
+		base = (vaddr_t)core_mmu_add_mapping(MEM_AREA_IO_SEC, otp_base, SMALL_PAGE_SIZE);
 		if (!base) {
 			plat_runtime_error_message("%s READ MMU address mapping failure", TA_NAME);
 			return TEE_ERROR_GENERIC;

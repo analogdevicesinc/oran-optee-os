@@ -41,6 +41,9 @@ register_phys_mem(MEM_AREA_IO_NSEC, A55_SYS_CFG + SCRATCH_NS, SMALL_PAGE_SIZE);
 /* Register the physical memory area for OTP registers */
 register_phys_mem(MEM_AREA_IO_SEC, OTP_BASE, SMALL_PAGE_SIZE);
 
+/* Register the physical memory area for OTP registers on the secondary tile */
+register_phys_mem(MEM_AREA_IO_SEC, SEC_OTP_BASE, SMALL_PAGE_SIZE);
+
 static bool is_dual_tile = false;
 static bool is_secondary_linux_enabled = false;
 static uint64_t sysclk_freq = 0ULL;
