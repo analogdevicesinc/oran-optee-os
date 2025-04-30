@@ -74,7 +74,7 @@
  *
  * Call register usage:
  * w3:    Service ID, OPTEE_FFA_EXCHANGE_CAPABILITIES
- * w4-w7: Note used (MBZ)
+ * w4-w7: Not used (MBZ)
  *
  * Return register usage:
  * w3:    Error code, 0 on success
@@ -82,8 +82,18 @@
  *                   as the second MSG arg struct for
  *                   OPTEE_FFA_YIELDING_CALL_WITH_ARG.
  *        Bit[31:8]: Reserved (MBZ)
- * w5-w7: Note used (MBZ)
+ * w5:	  Bitfield of OP-TEE capabilities OPTEE_FFA_SEC_CAP_*
+ * w6:	  The maximum secure world notification number
+ * w7:	  Not used (MBZ)
  */
+/*
+ * Secure world supports using an offset into the argument shared memory
+ * object, see also OPTEE_FFA_YIELDING_CALL_WITH_ARG
+ */
+#define OPTEE_FFA_SEC_CAP_ARG_OFFSET	BIT(0)
+/* OP-TEE supports asynchronous notification via FF-A */
+#define OPTEE_FFA_SEC_CAP_ASYNC_NOTIF	BIT(1)
+
 #define OPTEE_FFA_EXCHANGE_CAPABILITIES OPTEE_FFA_BLOCKING_CALL(2)
 
 /*
@@ -97,9 +107,24 @@
  *
  * Return register usage:
  * w3:    Error code, 0 on success
- * w4-w7: Note used (MBZ)
+ * w4-w7: Not used (MBZ)
  */
 #define OPTEE_FFA_UNREGISTER_SHM	OPTEE_FFA_BLOCKING_CALL(3)
+
+/*
+ * Inform OP-TEE that normal world is able to receive asynchronous
+ * notifications.
+ *
+ * Call register usage:
+ * w3:    Service ID, OPTEE_FFA_ENABLE_ASYNC_NOTIF
+ * w4:	  Notification value to request bottom half processing
+ * w5-w7: Not used (MBZ)
+ *
+ * Return register usage:
+ * w3:    Error code, 0 on success
+ * w4-w7: Not used (MBZ)
+ */
+#define OPTEE_FFA_ENABLE_ASYNC_NOTIF	OPTEE_FFA_BLOCKING_CALL(5)
 
 /*
  * Call with struct optee_msg_arg as argument in the supplied shared memory
@@ -113,6 +138,8 @@
  *	  OPTEE_MSG_GET_ARG_SIZE(num_params) follows a struct optee_msg_arg
  *	  for RPC, this struct has reserved space for the number of RPC
  *	  parameters as returned by OPTEE_FFA_EXCHANGE_CAPABILITIES.
+ *	  MBZ unless the bit OPTEE_FFA_SEC_CAP_ARG_OFFSET is received with
+ *	  OPTEE_FFA_EXCHANGE_CAPABILITIES.
  * w7:    Not used (MBZ)
  * Resume from RPC. Register usage:
  * w3:    Service ID, OPTEE_FFA_YIELDING_CALL_RESUME
@@ -132,7 +159,7 @@
  *
  * Possible error codes in register w3:
  * 0:                       Success
- * FFA_DENIED:             w4 isn't one of OPTEE_FFA_YIELDING_CALL_START
+ * FFA_DENIED:              w4 isn't one of OPTEE_FFA_YIELDING_CALL_START
  *                          OPTEE_FFA_YIELDING_CALL_RESUME
  *
  * Possible error codes for OPTEE_FFA_YIELDING_CALL_START,

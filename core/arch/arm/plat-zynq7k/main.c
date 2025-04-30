@@ -44,7 +44,6 @@
 #include <stdint.h>
 #include <tee/entry_fast.h>
 
-static struct gic_data gic_data;
 static struct cdns_uart_data console_data;
 
 register_phys_mem_pgdir(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE,
@@ -142,27 +141,14 @@ void arm_cl2_enable(vaddr_t pl310_base)
 		write_actlr(read_actlr() | (1 << 3));
 }
 
-void main_init_gic(void)
+void boot_primary_init_intc(void)
 {
-	vaddr_t gicc_base;
-	vaddr_t gicd_base;
-
-	gicc_base = (vaddr_t)phys_to_virt(GIC_BASE + GICC_OFFSET,
-					  MEM_AREA_IO_SEC, 1);
-	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
-					  MEM_AREA_IO_SEC, 1);
-
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(GIC_BASE + GICC_OFFSET, GIC_BASE + GICD_OFFSET);
 }
 
-void main_secondary_init_gic(void)
+void boot_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
+	gic_init_per_cpu();
 }
 
 static vaddr_t slcr_access_range[] = {

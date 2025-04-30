@@ -106,6 +106,12 @@ static void assert_type_is_valid(enum dt_driver_type type)
 	case DT_DRIVER_CLK:
 	case DT_DRIVER_RSTCTRL:
 	case DT_DRIVER_UART:
+	case DT_DRIVER_GPIO:
+	case DT_DRIVER_I2C:
+	case DT_DRIVER_PINCTRL:
+	case DT_DRIVER_INTERRUPT:
+	case DT_DRIVER_REGULATOR:
+	case DT_DRIVER_NVMEM:
 		return;
 	default:
 		assert(0);
@@ -133,7 +139,7 @@ TEE_Result dt_driver_register_provider(const void *fdt, int nodeoffset,
 	}
 
 	phandle = fdt_get_phandle(fdt, nodeoffset);
-	if (!phandle || phandle == (uint32_t)-1) {
+	if (phandle == (uint32_t)-1) {
 		DMSG("Failed to find provide phandle");
 		return TEE_ERROR_GENERIC;
 	}
@@ -154,6 +160,17 @@ TEE_Result dt_driver_register_provider(const void *fdt, int nodeoffset,
 	return TEE_SUCCESS;
 }
 
+static bool dt_driver_use_parent_controller(enum dt_driver_type type)
+{
+	switch (type) {
+	case DT_DRIVER_PINCTRL:
+	case DT_DRIVER_NVMEM:
+		return true;
+	default:
+		return false;
+	}
+}
+
 /*
  * Helper functions for dt_drivers querying driver provider information
  */
@@ -165,13 +182,25 @@ int fdt_get_dt_driver_cells(const void *fdt, int nodeoffset,
 	const fdt32_t *c = NULL;
 	int len = 0;
 
+	if (dt_driver_use_parent_controller(type))
+		return 0;
+
 	switch (type) {
 	case DT_DRIVER_CLK:
 		cells_name = "#clock-cells";
 		break;
+	case DT_DRIVER_INTERRUPT:
+		cells_name = "#interrupt-cells";
+		break;
 	case DT_DRIVER_RSTCTRL:
 		cells_name = "#reset-cells";
 		break;
+	case DT_DRIVER_GPIO:
+		cells_name = "#gpio-cells";
+		break;
+	case DT_DRIVER_I2C:
+	case DT_DRIVER_REGULATOR:
+		return 0;
 	default:
 		panic();
 	}
@@ -189,6 +218,11 @@ int fdt_get_dt_driver_cells(const void *fdt, int nodeoffset,
 unsigned int dt_driver_provider_cells(struct dt_driver_provider *prv)
 {
 	return prv->provider_cells;
+}
+
+void *dt_driver_provider_priv_data(struct dt_driver_provider *prv)
+{
+	return prv->priv_data;
 }
 
 struct dt_driver_provider *
@@ -215,42 +249,104 @@ dt_driver_get_provider_by_phandle(uint32_t phandle, enum dt_driver_type type)
 	return NULL;
 }
 
-static void *device_from_provider_prop(struct dt_driver_provider *prv,
-					  const uint32_t *prop,
-					  TEE_Result *res)
+static TEE_Result device_from_provider_prop(struct dt_driver_provider *prv,
+					    const void *fdt, int phandle_node,
+					    const uint32_t *prop,
+					    void *device_ref)
 {
-	struct dt_driver_phandle_args *pargs = NULL;
+	TEE_Result res = TEE_ERROR_GENERIC;
+	struct dt_pargs *pargs = NULL;
 	unsigned int n = 0;
-	void *device = NULL;
 
 	pargs = calloc(1, prv->provider_cells * sizeof(uint32_t *) +
 		       sizeof(*pargs));
-	if (!pargs) {
-		*res = TEE_ERROR_OUT_OF_MEMORY;
-		return NULL;
-	}
+	if (!pargs)
+		return TEE_ERROR_OUT_OF_MEMORY;
 
+	pargs->fdt = fdt;
+	pargs->phandle_node = phandle_node;
 	pargs->args_count = prv->provider_cells;
 	for (n = 0; n < prv->provider_cells; n++)
-		pargs->args[n] = fdt32_to_cpu(prop[n + 1]);
+		pargs->args[n] = fdt32_to_cpu(prop[n]);
 
-	device = prv->get_of_device(pargs, prv->priv_data, res);
+	res = prv->get_of_device(pargs, prv->priv_data, device_ref);
 
 	free(pargs);
 
-	return device;
+	return res;
 }
 
-void *dt_driver_device_from_node_idx_prop(const char *prop_name,
-					  const void *fdt, int nodeoffset,
-					  unsigned int prop_idx,
-					  enum dt_driver_type type,
-					  TEE_Result *res)
+TEE_Result dt_driver_device_from_parent(const void *fdt, int nodeoffset,
+					enum dt_driver_type type,
+					void *device_ref)
+{
+	int parent = -1;
+	struct dt_driver_provider *prv = NULL;
+
+	assert(fdt == get_secure_dt());
+
+	parent = fdt_parent_offset(fdt, nodeoffset);
+	if (parent < 0)
+		return TEE_ERROR_GENERIC;
+
+	prv = dt_driver_get_provider_by_node(parent, type);
+	if (!prv) {
+		/* No provider registered yet */
+		return TEE_ERROR_DEFER_DRIVER_INIT;
+	}
+
+	return device_from_provider_prop(prv, fdt, nodeoffset, NULL,
+					 device_ref);
+}
+
+TEE_Result dt_driver_device_from_node_idx_prop_phandle(const char *prop_name,
+						       const void *fdt,
+						       int nodeoffs,
+						       unsigned int prop_index,
+						       enum dt_driver_type type,
+						       uint32_t phandle,
+						       void *device_ref)
+{
+	int len = 0;
+	const uint32_t *prop = NULL;
+	int phandle_node_unused = -1;
+	struct dt_driver_provider *prv = NULL;
+
+	prop = fdt_getprop(fdt, nodeoffs, prop_name, &len);
+	if (!prop) {
+		if (len != -FDT_ERR_NOTFOUND) {
+			DMSG("Corrupted node %s", prop_name);
+			return TEE_ERROR_GENERIC;
+		} else {
+			DMSG("Property %s missing in node %s", prop_name,
+			     fdt_get_name(fdt, nodeoffs, NULL));
+			return TEE_ERROR_ITEM_NOT_FOUND;
+		}
+	}
+
+	prv = dt_driver_get_provider_by_phandle(phandle, type);
+	if (!prv)
+		return TEE_ERROR_DEFER_DRIVER_INIT;
+
+	prop_index *= dt_driver_provider_cells(prv);
+	if ((prop_index + 1) * sizeof(*prop) > (size_t)len)
+		return TEE_ERROR_ITEM_NOT_FOUND;
+
+	return device_from_provider_prop(prv, fdt, phandle_node_unused,
+					 prop + prop_index, device_ref);
+}
+
+TEE_Result dt_driver_device_from_node_idx_prop(const char *prop_name,
+					       const void *fdt, int nodeoffset,
+					       unsigned int prop_idx,
+					       enum dt_driver_type type,
+					       void *device_ref)
 {
 	int len = 0;
 	int idx = 0;
 	int idx32 = 0;
 	int prv_cells = 0;
+	int phandle_node = -1;
 	uint32_t phandle = 0;
 	const uint32_t *prop = NULL;
 	struct dt_driver_provider *prv = NULL;
@@ -259,33 +355,83 @@ void *dt_driver_device_from_node_idx_prop(const char *prop_name,
 	if (!prop) {
 		DMSG("Property %s missing in node %s", prop_name,
 		     fdt_get_name(fdt, nodeoffset, NULL));
-		*res = TEE_ERROR_GENERIC;
-		return NULL;
+		return TEE_ERROR_ITEM_NOT_FOUND;
 	}
 
 	while (idx < len) {
 		idx32 = idx / sizeof(uint32_t);
 		phandle = fdt32_to_cpu(prop[idx32]);
-
-		prv = dt_driver_get_provider_by_phandle(phandle, type);
-		if (!prv) {
-			/* No provider registered yet */
-			*res = TEE_ERROR_DEFER_DRIVER_INIT;
-			return NULL;
+		if (!phandle) {
+			if (!prop_idx)
+				break;
+			idx += sizeof(phandle);
+			prop_idx--;
+			continue;
 		}
 
-		prv_cells = dt_driver_provider_cells(prv);
+		/*
+		 * In some cases, pinctrl, i2c, nvmem, etc, the consumer phandle
+		 * points directly to a subnode of the parent. In such cases,
+		 * the provider does not have any "-cells" property and
+		 * potentially no "phandle" property.
+		 */
+		if (dt_driver_use_parent_controller(type)) {
+			phandle_node = fdt_node_offset_by_phandle(fdt, phandle);
+			if (phandle_node < 0)
+				return TEE_ERROR_GENERIC;
+
+			nodeoffset = fdt_parent_offset(fdt, phandle_node);
+			if (nodeoffset < 0)
+				return TEE_ERROR_GENERIC;
+
+			prv = dt_driver_get_provider_by_node(nodeoffset, type);
+		} else {
+			prv = dt_driver_get_provider_by_phandle(phandle, type);
+		}
+
+		if (prv) {
+			prv_cells = dt_driver_provider_cells(prv);
+		} else if (prop_idx) {
+			/*
+			 * When we need to skip another provider phandle
+			 * arguments cells (aka when prop_idx != 0), we don't
+			 * really need the skipped provider to be already
+			 * registered, we can look straight in its DT node.
+			 */
+			phandle_node = fdt_node_offset_by_phandle(fdt, phandle);
+			if (phandle_node < 0) {
+				DMSG("Can't find node for phandle %"PRIu32,
+				     phandle);
+				return TEE_ERROR_GENERIC;
+			}
+
+			prv_cells = fdt_get_dt_driver_cells(fdt, phandle_node,
+							    type);
+			if (prv_cells < 0) {
+				DMSG("Can't find cells count on node %s: %d",
+				     fdt_get_name(fdt, phandle_node, NULL),
+				     prv_cells);
+				return TEE_ERROR_GENERIC;
+			}
+		}
+
 		if (prop_idx) {
 			prop_idx--;
 			idx += sizeof(phandle) + prv_cells * sizeof(uint32_t);
 			continue;
 		}
 
-		return device_from_provider_prop(prv, prop + idx32, res);
+		if (!prv)
+			return TEE_ERROR_DEFER_DRIVER_INIT;
+
+		/* Skip property cell with the phandle, already handled */
+		idx32++;
+
+		return device_from_provider_prop(prv, fdt, phandle_node,
+						 prop + idx32, device_ref);
 	}
 
-	*res = TEE_ERROR_GENERIC;
-	return NULL;
+	return TEE_ERROR_ITEM_NOT_FOUND;
 }
 
 static void __maybe_unused print_probe_list(const void *fdt __maybe_unused)
@@ -350,6 +496,9 @@ static TEE_Result probe_driver_node(const void *fdt,
 
 		DMSG("element: %s on node %s deferred %u time(s)", drv_name,
 		     node_name, elt->deferrals);
+		break;
+	case TEE_ERROR_NODE_DISABLED:
+		DMSG("element: %s on node %s is disabled", drv_name, node_name);
 		break;
 	default:
 		TAILQ_INSERT_HEAD(&dt_driver_failed_list, elt, link);
@@ -537,7 +686,7 @@ static TEE_Result add_node_to_probe(const void *fdt, int node,
 	if (!elt)
 		return TEE_ERROR_OUT_OF_MEMORY;
 
-	DMSG("element: %s on node %s", node_name, drv_name);
+	DMSG("element: %s on node %s", drv_name, node_name);
 
 	memcpy(elt, &elt_new, sizeof(*elt));
 
@@ -607,7 +756,7 @@ TEE_Result dt_driver_maybe_add_probe_node(const void *fdt, int node)
 	const char *compat = NULL;
 	TEE_Result res = TEE_ERROR_GENERIC;
 
-	if (_fdt_get_status(fdt, node) == DT_STATUS_DISABLED)
+	if (fdt_get_status(fdt, node) == DT_STATUS_DISABLED)
 		return TEE_SUCCESS;
 
 	count = fdt_stringlist_count(fdt, node, "compatible");
@@ -647,7 +796,7 @@ static void parse_node(const void *fdt, int node)
 		 * stack depth to possibly parse all DT nodes.
 		 */
 		if (IS_ENABLED(CFG_DRIVERS_DT_RECURSIVE_PROBE)) {
-			if (_fdt_get_status(fdt, subnode) == DT_STATUS_DISABLED)
+			if (fdt_get_status(fdt, subnode) == DT_STATUS_DISABLED)
 				continue;
 
 			parse_node(fdt, subnode);
@@ -664,11 +813,9 @@ static TEE_Result probe_dt_drivers_early(void)
 	TEE_Result res = TEE_ERROR_GENERIC;
 	const void *fdt = NULL;
 
-	if (!IS_ENABLED(CFG_EMBED_DTB))
+	fdt = get_secure_dt();
+	if (!fdt)
 		return TEE_SUCCESS;
-
-	fdt = get_embedded_dt();
-	assert(fdt);
 
 	parse_node(fdt, fdt_path_offset(fdt, "/"));
 
@@ -687,19 +834,16 @@ static TEE_Result probe_dt_drivers(void)
 	TEE_Result res = TEE_ERROR_GENERIC;
 	const void *fdt = NULL;
 
-	if (!IS_ENABLED(CFG_EMBED_DTB))
+	fdt = get_secure_dt();
+	if (!fdt)
 		return TEE_SUCCESS;
-
-	fdt = get_embedded_dt();
-	assert(fdt);
 
 	res = process_probe_list(fdt);
 	if (res || !TAILQ_EMPTY(&dt_driver_failed_list)) {
 		EMSG("Probe sequence result: %#"PRIx32, res);
 		print_probe_list(fdt);
-	}
-	if (res)
 		panic();
+	}
 
 	return TEE_SUCCESS;
 }
@@ -713,12 +857,11 @@ static TEE_Result release_probe_lists(void)
 	struct dt_driver_probe *next = NULL;
 	struct dt_driver_provider *prov = NULL;
 	struct dt_driver_provider *next_prov = NULL;
-	const void * __maybe_unused fdt = NULL;
+	const void *fdt = NULL;
 
-	if (!IS_ENABLED(CFG_EMBED_DTB))
+	fdt = get_secure_dt();
+	if (!fdt)
 		return TEE_SUCCESS;
-
-	fdt = get_embedded_dt();
 
 	assert(fdt && TAILQ_EMPTY(&dt_driver_probe_list));
 

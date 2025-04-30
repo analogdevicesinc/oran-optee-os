@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 1994-2009  Red Hat, Inc.
  * Copyright (c) 2016, Linaro Limited
+ * Copyright 2022-2023 NXP
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,6 +51,17 @@
 #if defined(ARM64)
 #define _JBLEN 22
 #define _JBTYPE long long
+#endif
+
+#if defined(RV64) || defined(RV32)
+/*
+ * Callee preserved registers:
+ * s0-s11, ra, sp
+ * One additional value used in case ftrace
+ * is enabled to restore ftrace return stack.
+ */
+#define _JBLEN 15
+#define _JBTYPE unsigned long
 #endif
 
 #ifdef _JBLEN

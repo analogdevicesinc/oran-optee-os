@@ -2,10 +2,11 @@
 /*
  * Copyright (c) 2014-2019, Linaro Limited
  */
-#ifndef IO_H
-#define IO_H
+#ifndef __IO_H
+#define __IO_H
 
 #include <compiler.h>
+#include <kernel/delay.h>
 #include <stdint.h>
 #include <types_ext.h>
 #include <utee_defines.h>
@@ -35,6 +36,11 @@ static inline void io_write32(vaddr_t addr, uint32_t val)
 	*(volatile uint32_t *)addr = val;
 }
 
+static inline void io_write64(vaddr_t addr, uint64_t val)
+{
+	*(volatile uint64_t *)addr = val;
+}
+
 static inline uint8_t io_read8(vaddr_t addr)
 {
 	return *(volatile uint8_t *)addr;
@@ -48,6 +54,11 @@ static inline uint16_t io_read16(vaddr_t addr)
 static inline uint32_t io_read32(vaddr_t addr)
 {
 	return *(volatile uint32_t *)addr;
+}
+
+static inline uint64_t io_read64(vaddr_t addr)
+{
+	return *(volatile uint64_t *)addr;
 }
 
 static inline void io_mask8(vaddr_t addr, uint8_t val, uint8_t mask)
@@ -115,6 +126,96 @@ static inline uint64_t get_le64(const void *p)
 	return *(const uint64_t *)p;
 }
 
+/* Unaligned accesses */
+
+struct __unaligned_u16_t { uint16_t x; } __packed;
+struct __unaligned_u32_t { uint32_t x; } __packed;
+struct __unaligned_u64_t { uint64_t x; } __packed;
+
+static inline uint64_t get_unaligned_be64(const void *p)
+{
+	const struct __unaligned_u64_t *tmp = p;
+
+	return TEE_U64_FROM_BIG_ENDIAN(tmp->x);
+}
+
+static inline void put_unaligned_be64(void *p, uint64_t val)
+{
+	struct __unaligned_u64_t *tmp = p;
+
+	tmp->x = TEE_U64_TO_BIG_ENDIAN(val);
+}
+
+static inline uint32_t get_unaligned_be32(const void *p)
+{
+	const struct __unaligned_u32_t *tmp = p;
+
+	return TEE_U32_FROM_BIG_ENDIAN(tmp->x);
+}
+
+static inline void put_unaligned_be32(void *p, uint32_t val)
+{
+	struct __unaligned_u32_t *tmp = p;
+
+	tmp->x = TEE_U32_TO_BIG_ENDIAN(val);
+}
+
+static inline uint16_t get_unaligned_be16(const void *p)
+{
+	const struct __unaligned_u16_t *tmp = p;
+
+	return TEE_U16_FROM_BIG_ENDIAN(tmp->x);
+}
+
+static inline void put_unaligned_be16(void *p, uint16_t val)
+{
+	struct __unaligned_u16_t *tmp = p;
+
+	tmp->x = TEE_U16_TO_BIG_ENDIAN(val);
+}
+
+static inline void put_unaligned_le64(void *p, uint64_t val)
+{
+	struct __unaligned_u64_t *tmp = p;
+
+	tmp->x = val;
+}
+
+static inline uint64_t get_unaligned_le64(const void *p)
+{
+	const struct __unaligned_u64_t *tmp = p;
+
+	return tmp->x;
+}
+
+static inline void put_unaligned_le32(void *p, uint32_t val)
+{
+	struct __unaligned_u32_t *tmp = p;
+
+	tmp->x = val;
+}
+
+static inline uint32_t get_unaligned_le32(const void *p)
+{
+	const struct __unaligned_u32_t *tmp = p;
+
+	return tmp->x;
+}
+
+static inline void put_unaligned_le16(void *p, uint16_t val)
+{
+	struct __unaligned_u16_t *tmp = p;
+
+	tmp->x = val;
+}
+
+static inline uint16_t get_unaligned_le16(const void *p)
+{
+	const struct __unaligned_u16_t *tmp = p;
+
+	return tmp->x;
+}
+
 /*
  * Set and clear bits helpers.
  *
@@ -173,4 +274,31 @@ static inline void io_clrsetbits8(vaddr_t addr, uint8_t clear_mask,
 	io_write8(addr, (io_read8(addr) & ~clear_mask) | set_mask);
 }
 
-#endif /*IO_H*/
+/*
+ * Poll on a IO memory content or timeout
+ *
+ * @_addr is the address of the memory cell accessed
+ * @_val represents the val of the memory cell accessed
+ * @_cond represents the condition to get the correct value
+ * @_delay_us represents the read interval in mircorseconds
+ * @_timeout_us represents the timeout period in microseconds
+ *
+ * @return nonzero value means timeout, 0 means got right value
+ */
+#define IO_READ32_POLL_TIMEOUT(_addr, _val, _cond, _delay_us, _timeout_us) \
+	({ \
+		uint32_t __timeout = 0; \
+		uint32_t __delay = (_delay_us); \
+		\
+		while (__timeout < (_timeout_us)) { \
+			(_val) = io_read32(_addr); \
+			if (_cond) \
+				break; \
+			__timeout += (__delay); \
+			udelay(__delay); \
+		} \
+		(_val) = io_read32(_addr); \
+		!(_cond); \
+	})
+
+#endif /*__IO_H*/

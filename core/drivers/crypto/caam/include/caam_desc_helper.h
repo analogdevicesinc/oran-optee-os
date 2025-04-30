@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2021, 2024 NXP
  *
  * Brief   CAAM Descriptor interface.
  */
@@ -136,6 +136,14 @@ static inline void dump_desc(uint32_t *desc)
 	 LOAD_LENGTH(len))
 
 /*
+ * Load Immediate value of length len to register dst of class starting of
+ * register offset.
+ */
+#define LD_IMM_OFF(cla, dst, len, off)                                         \
+	(CMD_LOAD_TYPE | CMD_CLASS(cla) | CMD_IMM | LOAD_DST(dst) |            \
+	 LOAD_OFFSET(off) | LOAD_LENGTH(len))
+
+/*
  * Load Immediate value of length len to register dst w/o class
  */
 #define LD_NOCLASS_IMM(dst, len) LD_IMM(CLASS_NO, dst, len)
@@ -265,7 +273,7 @@ static inline void dump_desc(uint32_t *desc)
  */
 #define RNG_SH_INST(sh)                                                        \
 	(CMD_OP_TYPE | OP_TYPE(CLASS1) | OP_ALGO(RNG) | ALGO_RNG_SH(sh) |      \
-	 ALGO_AS(RNG_INSTANTIATE))
+	 ALGO_AS(RNG_INSTANTIATE) | ALGO_RNG_PR)
 
 /*
  * RNG Generates Secure Keys
@@ -486,18 +494,18 @@ static inline void dump_desc(uint32_t *desc)
 	(CMD_OP_TYPE | OP_TYPE(UNI) | PROTID(PKKEY) | PROT_PK_TYPE(type))
 
 /*
- * DSA/ECDSA signature of message hashed
+ * DSA/ECDSA signature of message of msg_type
  */
-#define DSA_SIGN(type)                                                         \
-	(CMD_OP_TYPE | OP_TYPE(UNI) | PROTID(DSASIGN) | PROT_PK_MSG(HASHED) |  \
-	 PROT_PK_TYPE(type))
+#define DSA_SIGN(type, msg_type)                        \
+	(CMD_OP_TYPE | OP_TYPE(UNI) | PROTID(DSASIGN) | \
+	 PROT_PK_MSG(msg_type) | PROT_PK_TYPE(type))
 
 /*
- * DSA/ECDSA signature verify message hashed
+ * DSA/ECDSA signature verify message of msg_type
  */
-#define DSA_VERIFY(type)                                                       \
-	(CMD_OP_TYPE | OP_TYPE(UNI) | PROTID(DSAVERIFY) |                      \
-	 PROT_PK_MSG(HASHED) | PROT_PK_TYPE(type))
+#define DSA_VERIFY(type, msg_type)                        \
+	(CMD_OP_TYPE | OP_TYPE(UNI) | PROTID(DSAVERIFY) | \
+	 PROT_PK_MSG(msg_type) | PROT_PK_TYPE(type))
 
 /*
  * DH/ECC Shared Secret

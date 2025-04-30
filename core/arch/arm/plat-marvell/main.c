@@ -40,7 +40,6 @@
 #include <io.h>
 #include <keep.h>
 #include <kernel/boot.h>
-#include <kernel/interrupt.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
 #include <kernel/tee_common_otp.h>
@@ -51,7 +50,6 @@
 #include <stdint.h>
 #include <string.h>
 
-static struct gic_data gic_data;
 #if defined(PLATFORM_FLAVOR_armada7k8k)
 static struct serial8250_uart_data console_data;
 #elif defined(PLATFORM_FLAVOR_armada3700)
@@ -73,32 +71,19 @@ register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICD_BASE, CORE_MMU_PGDIR_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICC_BASE, CORE_MMU_PGDIR_SIZE);
 #endif
 
-void main_init_gic(void)
+void boot_primary_init_intc(void)
 {
-	vaddr_t gicd_base;
-	vaddr_t gicc_base = 0;
+	paddr_t gicd_base = 0;
+	paddr_t gicc_base = 0;
 
 #ifdef GICC_BASE
-	gicc_base = (vaddr_t)phys_to_virt(GIC_BASE + GICC_OFFSET,
-					  MEM_AREA_IO_SEC, 1);
-	if (!gicc_base)
-		panic();
+	gicc_base = GIC_BASE + GICC_OFFSET;
 #endif
-	gicd_base = (vaddr_t)phys_to_virt(GIC_BASE + GICD_OFFSET,
-					  MEM_AREA_IO_SEC, 1);
-	if (!gicd_base)
-		panic();
+	gicd_base = GIC_BASE + GICD_OFFSET;
 
-	gic_init_base_addr(&gic_data, gicc_base, gicd_base);
-
-	itr_init(&gic_data.chip);
+	gic_init(gicc_base, gicd_base);
 }
 #endif
-
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
-}
 
 void console_init(void)
 {

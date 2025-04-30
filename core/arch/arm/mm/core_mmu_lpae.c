@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (BSD-2-Clause AND BSD-3-Clause)
 /*
- * Copyright (c) 2015-2016, Linaro Limited
+ * Copyright (c) 2015-2016, 2022 Linaro Limited
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 /*
- * Copyright (c) 2014, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014, 2022, ARM Limited and Contributors. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -69,15 +69,13 @@
 #include <kernel/panic.h>
 #include <kernel/thread.h>
 #include <kernel/tlb_helpers.h>
-#include <mm/core_memprot.h>
+#include <memtag.h>
 #include <mm/core_memprot.h>
 #include <mm/pgt_cache.h>
 #include <string.h>
 #include <trace.h>
 #include <types_ext.h>
 #include <util.h>
-
-#include "core_mmu_private.h"
 
 #ifndef DEBUG_XLAT_TABLE
 #define DEBUG_XLAT_TABLE 0
@@ -120,12 +118,17 @@
 #define LOWER_ATTRS_SHIFT		2
 #define LOWER_ATTRS(x)			(((x) & 0xfff) << LOWER_ATTRS_SHIFT)
 
-#define ATTR_DEVICE_INDEX		0x0
+#define ATTR_DEVICE_nGnRE_INDEX		0x0
 #define ATTR_IWBWA_OWBWA_NTR_INDEX	0x1
+#define ATTR_DEVICE_nGnRnE_INDEX	0x2
+#define ATTR_TAGGED_NORMAL_MEM_INDEX	0x3
 #define ATTR_INDEX_MASK			0x7
 
-#define ATTR_DEVICE			(0x4)
+#define ATTR_DEVICE_nGnRnE		(0x0)
+#define ATTR_DEVICE_nGnRE		(0x4)
 #define ATTR_IWBWA_OWBWA_NTR		(0xff)
+/* Same as ATTR_IWBWA_OWBWA_NTR but with memory tagging.  */
+#define ATTR_TAGGED_NORMAL_MEM		(0xf0)
 
 #define MAIR_ATTR_SET(attr, index)	(((uint64_t)attr) << ((index) << 3))
 
@@ -138,6 +141,7 @@
 #define TCR_PS_BITS_4TB		(0x3)
 #define TCR_PS_BITS_16TB	(0x4)
 #define TCR_PS_BITS_256TB	(0x5)
+#define TCR_PS_BITS_4PB		(0x6)
 
 #define UNSET_DESC		((uint64_t)-1)
 
@@ -194,7 +198,7 @@
 #endif
 
 #ifndef MAX_XLAT_TABLES
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 #	define XLAT_TABLE_VIRTUALIZATION_EXTRA 3
 #else
 #	define XLAT_TABLE_VIRTUALIZATION_EXTRA 0
@@ -280,13 +284,13 @@ static struct mmu_partition default_partition __nex_data = {
 	.asid = 0
 };
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 static struct mmu_partition *current_prtn[CFG_TEE_CORE_NB_CORE] __nex_bss;
 #endif
 
 static struct mmu_partition *get_prtn(void)
 {
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	struct mmu_partition *ret;
 	uint32_t exceptions = thread_mask_exceptions(THREAD_EXCP_ALL);
 
@@ -331,12 +335,16 @@ static uint32_t desc_to_mattr(unsigned level, uint64_t desc)
 	if (desc & UPPER_ATTRS(PXN))
 		a &= ~TEE_MATTR_PX;
 
-	COMPILE_TIME_ASSERT(ATTR_DEVICE_INDEX == TEE_MATTR_CACHE_NONCACHE);
+	COMPILE_TIME_ASSERT(ATTR_DEVICE_nGnRnE_INDEX ==
+			    TEE_MATTR_MEM_TYPE_STRONGLY_O);
+	COMPILE_TIME_ASSERT(ATTR_DEVICE_nGnRE_INDEX == TEE_MATTR_MEM_TYPE_DEV);
 	COMPILE_TIME_ASSERT(ATTR_IWBWA_OWBWA_NTR_INDEX ==
-			    TEE_MATTR_CACHE_CACHED);
+			    TEE_MATTR_MEM_TYPE_CACHED);
+	COMPILE_TIME_ASSERT(ATTR_TAGGED_NORMAL_MEM_INDEX ==
+			    TEE_MATTR_MEM_TYPE_TAGGED);
 
 	a |= ((desc & LOWER_ATTRS(ATTR_INDEX_MASK)) >> LOWER_ATTRS_SHIFT) <<
-	     TEE_MATTR_CACHE_SHIFT;
+	     TEE_MATTR_MEM_TYPE_SHIFT;
 
 	if (!(desc & LOWER_ATTRS(NON_GLOBAL)))
 		a |= TEE_MATTR_GLOBAL;
@@ -393,12 +401,18 @@ static uint64_t mattr_to_desc(unsigned level, uint32_t attr)
 		desc |= GP;
 
 	/* Keep in sync with core_mmu.c:core_mmu_mattr_is_ok */
-	switch ((a >> TEE_MATTR_CACHE_SHIFT) & TEE_MATTR_CACHE_MASK) {
-	case TEE_MATTR_CACHE_NONCACHE:
-		desc |= LOWER_ATTRS(ATTR_DEVICE_INDEX | OSH);
+	switch ((a >> TEE_MATTR_MEM_TYPE_SHIFT) & TEE_MATTR_MEM_TYPE_MASK) {
+	case TEE_MATTR_MEM_TYPE_STRONGLY_O:
+		desc |= LOWER_ATTRS(ATTR_DEVICE_nGnRnE_INDEX | OSH);
 		break;
-	case TEE_MATTR_CACHE_CACHED:
+	case TEE_MATTR_MEM_TYPE_DEV:
+		desc |= LOWER_ATTRS(ATTR_DEVICE_nGnRE_INDEX | OSH);
+		break;
+	case TEE_MATTR_MEM_TYPE_CACHED:
 		desc |= LOWER_ATTRS(ATTR_IWBWA_OWBWA_NTR_INDEX | ISH);
+		break;
+	case TEE_MATTR_MEM_TYPE_TAGGED:
+		desc |= LOWER_ATTRS(ATTR_TAGGED_NORMAL_MEM_INDEX | ISH);
 		break;
 	default:
 		/*
@@ -419,7 +433,7 @@ static uint64_t mattr_to_desc(unsigned level, uint32_t attr)
 	return desc;
 }
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 size_t core_mmu_get_total_pages_size(void)
 {
 	return ROUNDUP(sizeof(base_xlation_table), SMALL_PAGE_SIZE) +
@@ -533,7 +547,7 @@ static void *core_mmu_xlat_table_entry_pa2va(struct mmu_partition *prtn,
 
 	pa = entry & OUTPUT_ADDRESS_MASK;
 
-	if (!IS_ENABLED(CFG_VIRTUALIZATION) || prtn == &default_partition)
+	if (!IS_ENABLED(CFG_NS_VIRTUALIZATION) || prtn == &default_partition)
 		va = phys_to_virt(pa, MEM_AREA_TEE_RAM_RW_DATA,
 				  XLAT_TABLE_SIZE);
 	else
@@ -559,7 +573,7 @@ static bool core_mmu_entry_copy(struct core_mmu_table_info *tbl_info,
 	uint64_t *entry = NULL;
 	struct mmu_partition *prtn = NULL;
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	prtn = tbl_info->prtn;
 #else
 	prtn = &default_partition;
@@ -582,6 +596,8 @@ static bool core_mmu_entry_copy(struct core_mmu_table_info *tbl_info,
 
 	orig_table = core_mmu_xlat_table_entry_pa2va(prtn, tbl_info->level,
 						     *entry);
+	if (!orig_table)
+		return false;
 
 	/* Copy original table content to new table */
 	memcpy(new_table, orig_table, XLAT_TABLE_ENTRIES * XLAT_ENTRY_SIZE);
@@ -725,7 +741,7 @@ static void core_init_mmu_prtn_ta_core(struct mmu_partition *prtn
 	 * level 1 page table that's in base level 0 entry 0.
 	 */
 	core_mmu_set_info_table(&tbl_info, 0, 0, tbl);
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	tbl_info.prtn = prtn;
 #endif
 
@@ -808,13 +824,16 @@ void core_init_mmu(struct tee_mmap_region *mm)
 	assert(max_va < BIT64(CFG_LPAE_ADDR_SPACE_BITS));
 }
 
-bool core_mmu_place_tee_ram_at_top(paddr_t paddr)
+#ifdef CFG_WITH_PAGER
+/* Prefer to consume only 1 base xlat table for the whole mapping */
+bool core_mmu_prefer_tee_ram_at_top(paddr_t paddr)
 {
 	size_t base_level_size = BASE_XLAT_BLOCK_SIZE;
 	paddr_t base_level_mask = base_level_size - 1;
 
 	return (paddr & base_level_mask) > (base_level_size / 2);
 }
+#endif
 
 #ifdef ARM32
 void core_init_mmu_regs(struct core_mmu_config *cfg)
@@ -825,8 +844,15 @@ void core_init_mmu_regs(struct core_mmu_config *cfg)
 	cfg->ttbr0_base = virt_to_phys(base_xlation_table[0][0]);
 	cfg->ttbr0_core_offset = sizeof(base_xlation_table[0][0]);
 
-	mair  = MAIR_ATTR_SET(ATTR_DEVICE, ATTR_DEVICE_INDEX);
+	mair  = MAIR_ATTR_SET(ATTR_DEVICE_nGnRE, ATTR_DEVICE_nGnRE_INDEX);
 	mair |= MAIR_ATTR_SET(ATTR_IWBWA_OWBWA_NTR, ATTR_IWBWA_OWBWA_NTR_INDEX);
+	mair |= MAIR_ATTR_SET(ATTR_DEVICE_nGnRnE, ATTR_DEVICE_nGnRnE_INDEX);
+	/*
+	 * Tagged memory isn't supported in 32-bit mode, map tagged memory
+	 * as normal memory instead.
+	 */
+	mair |= MAIR_ATTR_SET(ATTR_IWBWA_OWBWA_NTR,
+			      ATTR_TAGGED_NORMAL_MEM_INDEX);
 	cfg->mair0 = mair;
 
 	ttbcr = TTBCR_EAE;
@@ -841,7 +867,7 @@ void core_init_mmu_regs(struct core_mmu_config *cfg)
 #endif /*ARM32*/
 
 #ifdef ARM64
-static unsigned int get_physical_addr_size_bits(void)
+static unsigned int get_hard_coded_pa_size_bits(void)
 {
 	/*
 	 * Intermediate Physical Address Size.
@@ -851,10 +877,10 @@ static unsigned int get_physical_addr_size_bits(void)
 	 * 0b011      42 bits, 4TB.
 	 * 0b100      44 bits, 16TB.
 	 * 0b101      48 bits, 256TB.
-	 * 0b110      52 bits, 4PB (not supported)
+	 * 0b110      52 bits, 4PB
 	 */
-
-	COMPILE_TIME_ASSERT(CFG_CORE_ARM64_PA_BITS >= 32);
+	static_assert(CFG_CORE_ARM64_PA_BITS >= 32);
+	static_assert(CFG_CORE_ARM64_PA_BITS <= 52);
 
 	if (CFG_CORE_ARM64_PA_BITS <= 32)
 		return TCR_PS_BITS_4GB;
@@ -871,10 +897,34 @@ static unsigned int get_physical_addr_size_bits(void)
 	if (CFG_CORE_ARM64_PA_BITS <= 44)
 		return TCR_PS_BITS_16TB;
 
-	/* Physical address can't exceed 48 bits */
-	COMPILE_TIME_ASSERT(CFG_CORE_ARM64_PA_BITS <= 48);
+	if (CFG_CORE_ARM64_PA_BITS <= 48)
+		return TCR_PS_BITS_256TB;
+
 	/* CFG_CORE_ARM64_PA_BITS <= 48 */
-	return TCR_PS_BITS_256TB;
+	return TCR_PS_BITS_4PB;
+}
+
+static unsigned int get_physical_addr_size_bits(void)
+{
+	const unsigned int size_bits = read_id_aa64mmfr0_el1() &
+				       ID_AA64MMFR0_EL1_PARANGE_MASK;
+	unsigned int b = 0;
+
+	if (IS_ENABLED(CFG_AUTO_MAX_PA_BITS))
+		return size_bits;
+
+	b = get_hard_coded_pa_size_bits();
+	assert(b <= size_bits);
+	return b;
+}
+
+unsigned int core_mmu_arm64_get_pa_width(void)
+{
+	const uint8_t map[] = { 32, 36, 40, 42, 44, 48, 52, };
+	unsigned int size_bits = get_physical_addr_size_bits();
+
+	size_bits = MIN(size_bits, ARRAY_SIZE(map) - 1);
+	return map[size_bits];
 }
 
 void core_init_mmu_regs(struct core_mmu_config *cfg)
@@ -886,8 +936,19 @@ void core_init_mmu_regs(struct core_mmu_config *cfg)
 	cfg->ttbr0_el1_base = virt_to_phys(base_xlation_table[0][0]);
 	cfg->ttbr0_core_offset = sizeof(base_xlation_table[0][0]);
 
-	mair  = MAIR_ATTR_SET(ATTR_DEVICE, ATTR_DEVICE_INDEX);
+	mair  = MAIR_ATTR_SET(ATTR_DEVICE_nGnRE, ATTR_DEVICE_nGnRE_INDEX);
 	mair |= MAIR_ATTR_SET(ATTR_IWBWA_OWBWA_NTR, ATTR_IWBWA_OWBWA_NTR_INDEX);
+	mair |= MAIR_ATTR_SET(ATTR_DEVICE_nGnRnE, ATTR_DEVICE_nGnRnE_INDEX);
+	/*
+	 * If MEMTAG isn't enabled, map tagged memory as normal memory
+	 * instead.
+	 */
+	if (memtag_is_enabled())
+		mair |= MAIR_ATTR_SET(ATTR_TAGGED_NORMAL_MEM,
+				      ATTR_TAGGED_NORMAL_MEM_INDEX);
+	else
+		mair |= MAIR_ATTR_SET(ATTR_IWBWA_OWBWA_NTR,
+				      ATTR_TAGGED_NORMAL_MEM_INDEX);
 	cfg->mair_el1 = mair;
 
 	tcr = TCR_RES1;
@@ -912,6 +973,7 @@ void core_mmu_set_info_table(struct core_mmu_table_info *tbl_info,
 		unsigned level, vaddr_t va_base, void *table)
 {
 	tbl_info->level = level;
+	tbl_info->next_level = level + 1;
 	tbl_info->table = table;
 	tbl_info->va_base = va_base;
 	tbl_info->shift = XLAT_ADDR_SHIFT(level);
@@ -992,9 +1054,10 @@ bool core_mmu_find_table(struct mmu_partition *prtn, vaddr_t va,
 			tbl_info->table = tbl;
 			tbl_info->va_base = va_base;
 			tbl_info->level = level;
+			tbl_info->next_level = level + 1;
 			tbl_info->shift = level_size_shift;
 			tbl_info->num_entries = num_entries;
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 			tbl_info->prtn = prtn;
 #endif
 			ret = true;
@@ -1026,7 +1089,7 @@ bool core_mmu_entry_to_finer_grained(struct core_mmu_table_info *tbl_info,
 	paddr_t block_size_on_next_lvl = XLAT_BLOCK_SIZE(tbl_info->level + 1);
 	struct mmu_partition *prtn;
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	prtn = tbl_info->prtn;
 #else
 	prtn = &default_partition;
@@ -1102,7 +1165,7 @@ static uint64_t *core_mmu_get_user_mapping_entry(struct mmu_partition *prtn,
 						 unsigned int base_idx)
 {
 #if (CORE_MMU_BASE_TABLE_LEVEL == 0)
-	uint8_t idx = 0;
+	l1_idx_t idx = 0;
 	uint64_t *tbl = NULL;
 #endif
 
@@ -1306,6 +1369,8 @@ enum core_mmu_fault core_mmu_get_fault_type(uint32_t fault_descr)
 				return CORE_MMU_FAULT_READ_PERMISSION;
 		case ESR_FSC_ALIGN:
 			return CORE_MMU_FAULT_ALIGNMENT;
+		case ESR_FSC_TAG_CHECK:
+			return CORE_MMU_FAULT_TAG_CHECK;
 		default:
 			return CORE_MMU_FAULT_OTHER;
 		}

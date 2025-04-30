@@ -329,6 +329,7 @@
  * ECC Protocol Information
  */
 #define PROT_PK_MSG(type)	SHIFT_U32(PROT_PK_MSG_##type, 10)
+#define PROT_PK_MSG_MES_REP	0
 #define PROT_PK_MSG_HASHED	2
 #define PROT_PK_TYPE(type)	SHIFT_U32(PROT_PK_##type, 1)
 #define PROT_PK_DL		0
@@ -340,6 +341,7 @@
 #define PROT_BLOB_FMT_MSTR		BIT32(1)
 #define PROT_BLOB_TYPE(type)		SHIFT_U32(1, PROT_BLOB_TYPE_##type)
 #define PROT_BLOB_TYPE_BLACK_KEY	2
+#define PROT_BLOB_SEC_MEM		BIT32(3)
 #define PROT_BLOB_EKT			8
 #define PROT_BLOB_INFO(aes)		SHIFT_U32(PROT_BLOB_AES_##aes, \
 						PROT_BLOB_EKT)
@@ -347,6 +349,12 @@
 #define PROT_BLOB_AES_ECB		0
 #define PROT_BLOB_FORMAT(format)	SHIFT_U32(0, PROT_BLOB_FORMAT_##format)
 #define PROT_BLOB_FORMAT_NORMAL		0
+
+/*
+ * MP Protocol Information
+ */
+#define PROT_MP_PUBK_SGT	BIT32(31)
+#define PROT_MP_CURVE(curve)	SHIFT_U32((curve) & 0xF, 17)
 
 /*
  * Algorithm Identifier
@@ -411,6 +419,9 @@
 
 /* State Handle */
 #define ALGO_RNG_SH(sh)		SHIFT_U32((sh) & 0x3, 4)
+
+/* Prediction Resistance */
+#define ALGO_RNG_PR BIT32(1)
 
 /* State */
 #define AS_RNG_GENERATE		0x0
@@ -641,6 +652,9 @@
 #define PDB_RSA_KEY_N_SIZE(len)	SHIFT_U32((len) & 0x3FF, 16)
 
 /* Manufacturing Curve Select */
+#define PDB_SGT_MP_SIGN_MSG		SHIFT_U32(1, 31)
+#define PDB_SGT_MP_SIGN_C		SHIFT_U32(1, 29)
+#define PDB_SGT_MP_SIGN_D		SHIFT_U32(1, 28)
 #define PDB_MP_CSEL_P256	0x03
 #define PDB_MP_CSEL_P384	0x04
 #define PDB_MP_CSEL_P521	0x05

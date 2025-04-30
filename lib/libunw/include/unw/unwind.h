@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: (BSD-2-Clause AND MIT-CMU) */
 /*-
+ * Copyright (c) 2023 Andes Technology Corporation
  * Copyright (c) 2015-2019, Linaro Limited
  * Copyright (c) 2000, 2001 Ben Harris
  * Copyright (c) 1996 Scott K. Stevens
@@ -112,10 +113,45 @@ static inline void print_stack_arm64(struct unwind_state_arm64 *state __unused,
 }
 #endif
 
+/* The state of the unwind process */
+struct unwind_state_riscv {
+	unsigned long fp;
+	unsigned long pc;
+};
+
+#if (defined(RV32) || defined(RV64)) && defined(CFG_UNWIND)
+/*
+ * Unwind stack.
+ * @stack, @stack_size: the bottom of the stack and its size, respectively.
+ * Returns false when there is nothing more to unwind.
+ */
+bool unwind_stack_riscv(struct unwind_state_riscv *state,
+			vaddr_t stack, size_t stack_size);
+
+void print_stack_riscv(struct unwind_state_riscv *state,
+		       vaddr_t stack, size_t stack_size);
+#else
+static inline bool unwind_stack_riscv(struct unwind_state_riscv *state __unused,
+				      vaddr_t stack __unused,
+				      size_t stack_size __unused)
+{
+	return false;
+}
+
+static inline void print_stack_riscv(struct unwind_state_riscv *state __unused,
+				     vaddr_t stack __unused,
+				     size_t stack_size __unused)
+{
+}
+#endif
+
 /*
  * External helper function optionally implemented by the caller of the 64-bit
  * stack unwinding functions.
  */
 void ftrace_map_lr(uint64_t *lr);
+
+/* Strip out PAuth tags from LR content if applicable */
+void pauth_strip_pac(uint64_t *lr);
 
 #endif /*UNW_UNWIND_H*/

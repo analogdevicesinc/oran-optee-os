@@ -40,6 +40,8 @@
 #define DBG_TRACE_ECC    BIT32(12) /* ECC trace */
 #define DBG_TRACE_DH	 BIT32(13) /* DH trace */
 #define DBG_TRACE_DSA	 BIT32(14) /* DSA trace */
+#define DBG_TRACE_MP	 BIT32(15) /* MP trace */
+#define DBG_TRACE_SM	 BIT32(16) /* Secure Memory trace */
 
 /* HAL */
 #if CAAM_DBG_TRACE(HAL)
@@ -255,6 +257,29 @@
 #define DSA_DUMPBUF(...)
 #endif
 
+/* MP */
+#if CAAM_DBG_TRACE(MP)
+#define MP_TRACE DRV_TRACE
+#if CAAM_DBG_DESC(MP)
+#define MP_DUMPDESC(desc)                                                      \
+	do {                                                                   \
+		MP_TRACE("MP Descriptor");                                     \
+		DRV_DUMPDESC(desc);                                            \
+	} while (0)
+#else
+#define MP_DUMPDESC(desc)
+#endif
+#if CAAM_DBG_BUF(MP)
+#define MP_DUMPBUF DRV_DUMPBUF
+#else
+#define MP_DUMPBUF(...)
+#endif
+#else
+#define MP_TRACE(...) do { } while (0)
+#define MP_DUMPDESC(desc)
+#define MP_DUMPBUF(...)
+#endif
+
 #if (TRACE_LEVEL >= TRACE_DEBUG)
 #define DRV_TRACE(...)                                                         \
 	trace_printf(__func__, __LINE__, TRACE_DEBUG, true, __VA_ARGS__)
@@ -296,6 +321,13 @@
 #define BLOB_TRACE(...)
 #define BLOB_DUMPDESC(desc)
 #define BLOB_DUMPBUF(...)
+#endif
+
+/* Secure Memory */
+#if CAAM_DBG_TRACE(SM)
+#define SM_TRACE DRV_TRACE
+#else
+#define SM_TRACE(...)
 #endif
 
 #endif /* CAAM_TRACE_H__ */

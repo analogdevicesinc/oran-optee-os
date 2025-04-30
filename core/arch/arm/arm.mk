@@ -26,6 +26,9 @@ CFG_MMAP_REGIONS ?= 13
 CFG_RESERVED_VASPACE_SIZE ?= (1024 * 1024 * 10)
 
 ifeq ($(CFG_ARM64_core),y)
+ifeq ($(CFG_ARM32_core),y)
+$(error CFG_ARM64_core and CFG_ARM32_core cannot be both 'y')
+endif
 CFG_KERN_LINKER_FORMAT ?= elf64-littleaarch64
 CFG_KERN_LINKER_ARCH ?= aarch64
 # TCR_EL1.IPS needs to be initialized according to the largest physical
@@ -35,13 +38,11 @@ CFG_KERN_LINKER_ARCH ?= aarch64
 # 36 bits, 64GB.
 # (etc.)
 CFG_CORE_ARM64_PA_BITS ?= 32
+$(call force,CFG_WITH_LPAE,y)
 else
-ifeq ($(CFG_ARM32_core),y)
+$(call force,CFG_ARM32_core,y)
 CFG_KERN_LINKER_FORMAT ?= elf32-littlearm
 CFG_KERN_LINKER_ARCH ?= arm
-else
-$(error Error: CFG_ARM64_core or CFG_ARM32_core should be defined)
-endif
 endif
 
 ifeq ($(CFG_TA_FLOAT_SUPPORT),y)
@@ -66,7 +67,8 @@ endif
 # Variant 2
 CFG_CORE_WORKAROUND_SPECTRE_BP ?= y
 # Same as CFG_CORE_WORKAROUND_SPECTRE_BP but targeting exceptions from
-# secure EL0 instead of non-secure world.
+# secure EL0 instead of non-secure world, including mitigation for
+# CVE-2022-23960.
 CFG_CORE_WORKAROUND_SPECTRE_BP_SEC ?= $(CFG_CORE_WORKAROUND_SPECTRE_BP)
 
 # Adds protection against a tool like Cachegrab
@@ -77,6 +79,13 @@ CFG_CORE_WORKAROUND_NSITR_CACHE_PRIME ?= y
 ifeq ($(CFG_CORE_WORKAROUND_NSITR_CACHE_PRIME),y)
 $(call force,CFG_CORE_WORKAROUND_SPECTRE_BP,y,Required by CFG_CORE_WORKAROUND_NSITR_CACHE_PRIME)
 endif
+
+# Adds workarounds against if ARM core is configured with Non-maskable FIQ
+# (NMFI) support. This is indicated by SCTLR.NMFI being true. NMFI cannot be
+# disabled by software and as it affects atomic context end result will be
+# prohibiting FIQ signal usage in OP-TEE and applying some tweaks to make sure
+# FIQ is enabled in critical places.
+CFG_CORE_WORKAROUND_ARM_NMFI ?= n
 
 CFG_CORE_RWDATA_NOEXEC ?= y
 CFG_CORE_RODATA_NOEXEC ?= n
@@ -95,12 +104,69 @@ endif
 ifeq ($(CFG_CORE_SEL1_SPMC),y)
 $(call force,CFG_CORE_FFA,y)
 $(call force,CFG_CORE_SEL2_SPMC,n)
+$(call force,CFG_CORE_EL3_SPMC,n)
 endif
 # SPMC configuration "S-EL2 SPMC" where SPM Core is implemented at S-EL2,
 # that is, the hypervisor sandboxing OP-TEE
 ifeq ($(CFG_CORE_SEL2_SPMC),y)
 $(call force,CFG_CORE_FFA,y)
+$(call force,CFG_CORE_SEL1_SPMC,n)
+$(call force,CFG_CORE_EL3_SPMC,n)
+CFG_CORE_HAFNIUM_INTC ?= y
+# Enable support in OP-TEE to relocate itself to allow it to run from a
+# physical address that differs from the link address
+CFG_CORE_PHYS_RELOCATABLE ?= y
 endif
+# SPMC configuration "EL3 SPMC" where SPM Core is implemented at EL3, that
+# is, in TF-A
+ifeq ($(CFG_CORE_EL3_SPMC),y)
+$(call force,CFG_CORE_FFA,y)
+$(call force,CFG_CORE_SEL2_SPMC,n)
+$(call force,CFG_CORE_SEL1_SPMC,n)
+endif
+
+ifeq ($(CFG_CORE_FFA),y)
+ifneq ($(CFG_DT),y)
+$(error CFG_CORE_FFA depends on CFG_DT)
+endif
+ifneq ($(CFG_ARM64_core),y)
+$(error CFG_CORE_FFA depends on CFG_ARM64_core)
+endif
+endif
+
+ifeq ($(CFG_CORE_PHYS_RELOCATABLE)-$(CFG_WITH_PAGER),y-y)
+$(error CFG_CORE_PHYS_RELOCATABLE and CFG_WITH_PAGER are not compatible)
+endif
+ifeq ($(CFG_CORE_PHYS_RELOCATABLE),y)
+ifneq ($(CFG_CORE_SEL2_SPMC),y)
+$(error CFG_CORE_PHYS_RELOCATABLE depends on CFG_CORE_SEL2_SPMC)
+endif
+endif
+
+ifeq ($(CFG_CORE_FFA)-$(CFG_WITH_PAGER),y-y)
+$(error CFG_CORE_FFA and CFG_WITH_PAGER are not compatible)
+endif
+ifeq ($(CFG_GIC),y)
+ifeq ($(CFG_ARM_GICV3),y)
+$(call force,CFG_CORE_IRQ_IS_NATIVE_INTR,y)
+else
+$(call force,CFG_CORE_IRQ_IS_NATIVE_INTR,n)
+endif
+endif
+
+CFG_CORE_HAFNIUM_INTC ?= n
+ifeq ($(CFG_CORE_HAFNIUM_INTC),y)
+$(call force,CFG_CORE_IRQ_IS_NATIVE_INTR,y)
+endif
+
+# Selects if IRQ is used to signal native interrupt
+# if CFG_CORE_IRQ_IS_NATIVE_INTR == y:
+#   IRQ signals a native interrupt pending
+#   FIQ signals a foreign non-secure interrupt or a managed exit pending
+# else: (vice versa)
+#   IRQ signals a foreign non-secure interrupt or a managed exit pending
+#   FIQ signals a native interrupt pending
+CFG_CORE_IRQ_IS_NATIVE_INTR ?= n
 
 # Unmaps all kernel mode code except the code needed to take exceptions
 # from user space and restore kernel mode mapping again. This gives more
@@ -116,7 +182,8 @@ CFG_SM_NO_CYCLE_COUNTING ?= y
 # CFG_CORE_ASYNC_NOTIF_GIC_INTID is defined by the platform to some free
 # interrupt. Setting it to a non-zero number enables support for using an
 # Arm-GIC to notify normal world. This config variable should use a value
-# larger the 32 to make it of the type SPI.
+# larger or equal to 24 to make it of the type SPI or PPI (secure PPI
+# only).
 # Note that asynchronous notifactions must be enabled with
 # CFG_CORE_ASYNC_NOTIF=y for this variable to be used.
 CFG_CORE_ASYNC_NOTIF_GIC_INTID ?= 0
@@ -127,6 +194,15 @@ ifeq ($(CFG_ARM32_core),y)
 # CFG_NS_ENTRY_ADDR: if defined, forces NS World physical entry address.
 # CFG_DT_ADDR:       if defined, forces Device Tree data physical address.
 endif
+
+# CFG_MAX_CACHE_LINE_SHIFT is used to define platform specific maximum cache
+# line size in address lines. This must cover all inner and outer cache levels.
+# When data is aligned with this and cache operations are performed then those
+# only affect correct data.
+#
+# Default value (6 lines or 64 bytes) should cover most architectures, override
+# this in platform config if different.
+CFG_MAX_CACHE_LINE_SHIFT ?= 6
 
 core-platform-cppflags	+= -I$(arch-dir)/include
 core-platform-subdirs += \
@@ -156,6 +232,11 @@ arm64-platform-cflags-no-hard-float ?= -mgeneral-regs-only
 arm64-platform-cflags-hard-float ?=
 arm64-platform-cflags-generic := -mstrict-align $(call cc-option,-mno-outline-atomics,)
 
+ifeq ($(CFG_MEMTAG),y)
+arm64-platform-cflags += -march=armv8.5-a+memtag
+arm64-platform-aflags += -march=armv8.5-a+memtag
+endif
+
 platform-cflags-optimization ?= -O$(CFG_CC_OPT_LEVEL)
 
 ifeq ($(CFG_DEBUG_INFO),y)
@@ -170,16 +251,27 @@ core-platform-cflags += $(platform-cflags-debug-info)
 core-platform-aflags += $(platform-aflags-generic)
 core-platform-aflags += $(platform-aflags-debug-info)
 
-ifeq ($(CFG_CORE_ASLR),y)
+ifeq ($(call cfg-one-enabled, CFG_CORE_ASLR CFG_CORE_PHYS_RELOCATABLE),y)
 core-platform-cflags += -fpie
 endif
 
-ifeq ($(CFG_CORE_BTI),y)
-bti-opt := $(call cc-option,-mbranch-protection=bti)
-ifeq (,$(bti-opt))
-$(error -mbranch-protection=bti not supported)
+ifeq ($(CFG_CORE_PAUTH),y)
+bp-core-opt := $(call cc-option,-mbranch-protection=pac-ret+leaf)
 endif
-core-platform-cflags += $(bti-opt)
+
+ifeq ($(CFG_CORE_BTI),y)
+bp-core-opt := $(call cc-option,-mbranch-protection=bti)
+endif
+
+ifeq (y-y,$(CFG_CORE_PAUTH)-$(CFG_CORE_BTI))
+bp-core-opt := $(call cc-option,-mbranch-protection=pac-ret+leaf+bti)
+endif
+
+ifeq (y,$(filter $(CFG_CORE_BTI) $(CFG_CORE_PAUTH),y))
+ifeq (,$(bp-core-opt))
+$(error -mbranch-protection not supported)
+endif
+core-platform-cflags += $(bp-core-opt)
 endif
 
 ifeq ($(CFG_ARM64_core),y)
@@ -297,12 +389,23 @@ ta_arm64-platform-cxxflags += -fpic
 ta_arm64-platform-cxxflags += $(platform-cflags-optimization)
 ta_arm64-platform-cxxflags += $(platform-cflags-debug-info)
 
-ifeq ($(CFG_TA_BTI),y)
-bti-ta-opt := $(call cc-option,-mbranch-protection=bti)
-ifeq (,$(bti-ta-opt))
-$(error -mbranch-protection=bti not supported)
+ifeq ($(CFG_TA_PAUTH),y)
+bp-ta-opt := $(call cc-option,-mbranch-protection=pac-ret+leaf)
 endif
-ta_arm64-platform-cflags += $(bti-ta-opt)
+
+ifeq ($(CFG_TA_BTI),y)
+bp-ta-opt := $(call cc-option,-mbranch-protection=bti)
+endif
+
+ifeq (y-y,$(CFG_TA_PAUTH)-$(CFG_TA_BTI))
+bp-ta-opt := $(call cc-option,-mbranch-protection=pac-ret+leaf+bti)
+endif
+
+ifeq (y,$(filter $(CFG_TA_BTI) $(CFG_TA_PAUTH),y))
+ifeq (,$(bp-ta-opt))
+$(error -mbranch-protection not supported)
+endif
+ta_arm64-platform-cflags += $(bp-ta-opt)
 endif
 
 ta-mk-file-export-vars-ta_arm64 += CFG_ARM64_ta_arm64

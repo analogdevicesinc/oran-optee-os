@@ -4,8 +4,8 @@
  * Copyright (c) 2019-2021, Linaro Limited
  */
 
-#ifndef SCMI_MSG_H
-#define SCMI_MSG_H
+#ifndef __DRIVERS_SCMI_MSG_H
+#define __DRIVERS_SCMI_MSG_H
 
 #include <compiler.h>
 #include <kernel/panic.h>
@@ -45,7 +45,7 @@ struct scmi_msg_channel {
  * agent channel using the SMT header format.
  * This function depends on CFG_SCMI_MSG_SMT.
  *
- * @chan: Pointer to the channel shared memory to be initialized
+ * @channel: Pointer to the channel shared memory to be initialized
  */
 void scmi_smt_init_agent_channel(struct scmi_msg_channel *channel);
 
@@ -118,6 +118,54 @@ static inline void scmi_smt_threaded_entry(unsigned int channel_id __unused)
 }
 #endif
 
+#ifdef CFG_SCMI_MSG_SHM_MSG
+/*
+ * Process MSG formatted message in a TEE thread execution context.
+ * When returning, output message is available in shared memory for
+ * agent to read the response.
+ * This function depends on CFG_SCMI_MSG_MSG_THREAD_ENTRY.
+ *
+ * @channel_id: SCMI channel ID
+ * @in_buf: Shared buffer storing input SCMI message
+ * @in_size: Byte size of @in_buf, including MSG header and message payload
+ * @out_buf: Shared buffer storing input SCMI message
+ * @out_size: [in] @out_buf max byte size
+ *            [out] @out_buf output byte size (MSG header and message payload)
+ */
+TEE_Result scmi_msg_threaded_entry(unsigned int channel_id,
+				   void *in_buf, size_t in_size,
+				   void *out_buf, size_t *out_size);
+#else
+static inline TEE_Result scmi_msg_threaded_entry(unsigned int chan_id __unused,
+						 void *in_buf __unused,
+						 size_t in_size __unused,
+						 void *out_buf __unused,
+						 size_t *out_size __unused)
+{
+	return TEE_ERROR_NOT_SUPPORTED;
+}
+#endif
+
+struct clk;
+
+#ifdef CFG_SCMI_MSG_USE_CLK
+/*
+ * Expose a clock through SCMI
+ * @clk: Clock to be exposed
+ * @channel_id: SCMI server channel exposing the clock
+ * @scmi_id: SCMI ID of the clock within the channel
+ */
+TEE_Result scmi_clk_add(struct clk *clk, unsigned int channel_id,
+			unsigned int scmi_id);
+#else
+static inline TEE_Result scmi_clk_add(struct clk *clk __unused,
+				      unsigned int channel_id __unused,
+				      unsigned int scmi_id __unused)
+{
+	return TEE_ERROR_NOT_SUPPORTED;
+}
+#endif
+
 /* Platform callback functions */
 
 /*
@@ -180,8 +228,8 @@ const char *plat_scmi_clock_get_name(unsigned int channel_id,
  * @channel_id: SCMI channel ID
  * @scmi_id: SCMI clock ID
  * @start_index: Requested start index for the exposed rates array
- * @rates: If NULL, function returns, else output rates array
- * @nb_elts: Array size of @rates.
+ * @rates: Output rates array or NULL if only querying @nb_elts
+ * @nb_elts: [in] Array size of @rates, [out] Number of rates loaded in @rates
  * Return an SCMI compliant error code
  */
 int32_t plat_scmi_clock_rates_array(unsigned int channel_id,
@@ -286,7 +334,7 @@ int32_t plat_scmi_rd_set_state(unsigned int channel_id, unsigned int scmi_id,
 size_t plat_scmi_voltd_count(unsigned int channel_id);
 
 /*
- * Get clock controller string ID (aka name)
+ * Get voltage domain string ID (aka name)
  * @channel_id: SCMI channel ID
  * @scmi_id: SCMI voltage domain ID
  * Return pointer to name or NULL
@@ -324,14 +372,16 @@ int32_t plat_scmi_voltd_levels_by_step(unsigned int channel_id,
  * Get current voltage domain level in microvolt
  * @channel_id: SCMI channel ID
  * @scmi_id: SCMI voltage domain ID
- * Return clock rate or 0 if not supported
+ * @level: Out parameter for the current voltage level
+ * Return an SCMI compliant error code
  */
-long plat_scmi_voltd_get_level(unsigned int channel_id, unsigned int scmi_id);
+int32_t plat_scmi_voltd_get_level(unsigned int channel_id, unsigned int scmi_id,
+				  long *level);
 
 /*
  * Set voltage domain level voltage domain
  * @channel_id: SCMI channel ID
- * @scmi_id: SCMI clock ID
+ * @scmi_id: SCMI voltage domain ID
  * @level: Target voltage domain level in microvolt
  * Return a compliant SCMI error code
  */
@@ -358,4 +408,4 @@ int32_t plat_scmi_voltd_get_config(unsigned int channel_id,
 int32_t plat_scmi_voltd_set_config(unsigned int channel_id,
 				   unsigned int scmi_id, uint32_t config);
 
-#endif /* SCMI_MSG_H */
+#endif /* __DRIVERS_SCMI_MSG_H */

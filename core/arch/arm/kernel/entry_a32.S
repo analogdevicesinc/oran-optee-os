@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2014, Linaro Limited
- * Copyright (c) 2021, Arm Limited
+ * Copyright (c) 2021-2023, Arm Limited
  */
 
 #include <arm32_macros.S>
@@ -11,12 +11,12 @@
 #include <keep.h>
 #include <kernel/asan.h>
 #include <kernel/cache_helpers.h>
+#include <kernel/thread_private.h>
+#include <mm/core_mmu.h>
 #include <platform_config.h>
 #include <sm/optee_smc.h>
 #include <sm/teesmc_opteed.h>
 #include <sm/teesmc_opteed_macros.h>
-
-#include "thread_private.h"
 
 .arch_extension sec
 
@@ -163,51 +163,6 @@ END_FUNC reset_vect_table
 		write_sctlr r0
 	.endm
 
-#if defined(CFG_CORE_SEL1_SPMC) && defined(CFG_WITH_ARM_TRUSTED_FW)
-	/*
-	 * With OP-TEE as SPMC at S-EL1 the SPMD (SPD_spmd) in TF-A passes
-	 * the DTB in r0, pagable part in r1, and the rest of the registers
-	 * are unused
-	 *
-	 * Save boot arguments passed
-	 * entry r0, saved r6: device tree address
-	 * entry r1, saved r4: pagestore
-	 * saved r5, r7: Zero
-	 */
-	.macro bootargs_entry
-	mov	r6, r0
-	mov	r4, r1
-	mov	r5, #0
-	mov	r7, #0
-	.endm
-#else
-	/*
-	 * Save boot arguments
-	 * entry r0, saved r4: pagestore
-	 * entry r1, saved r7: (ARMv7 standard bootarg #1)
-	 * entry r2, saved r6: device tree address, (ARMv7 standard bootarg #2)
-	 * entry lr, saved r5: non-secure entry address (ARMv7 bootarg #0)
-	 */
-	.macro bootargs_entry
-#if defined(CFG_NS_ENTRY_ADDR)
-	ldr	r5, =CFG_NS_ENTRY_ADDR
-#else
-	mov	r5, lr
-#endif
-#if defined(CFG_PAGEABLE_ADDR)
-	ldr	r4, =CFG_PAGEABLE_ADDR
-#else
-	mov	r4, r0
-#endif
-#if defined(CFG_DT_ADDR)
-	ldr	r6, =CFG_DT_ADDR
-#else
-	mov	r6, r2
-#endif
-	mov	r7, r1
-	.endm
-#endif
-
 	.macro maybe_init_spectre_workaround
 #if !defined(CFG_WITH_ARM_TRUSTED_FW) && \
     (defined(CFG_CORE_WORKAROUND_SPECTRE_BP) || \
@@ -239,8 +194,15 @@ END_FUNC reset_vect_table
 
 FUNC _start , :
 UNWIND(	.cantunwind)
-
-	bootargs_entry
+	/*
+	 * Temporary copy of boot argument registers, will be passed to
+	 * boot_save_args() further down.
+	 */
+	mov	r4, r0
+	mov	r5, r1
+	mov	r6, r2
+	mov	r7, r3
+	mov	r8, lr
 
 	/*
 	 * 32bit entry is expected to execute Supervisor mode,
@@ -271,13 +233,20 @@ DECLARE_KEEP_INIT _start
 
 	/*
 	 * Setup sp to point to the top of the tmp stack for the current CPU:
-	 * sp is assigned stack_tmp_export + cpu_id * stack_tmp_stride
+	 * sp is assigned:
+	 *   stack_tmp + (cpu_id + 1) * stack_tmp_stride - STACK_TMP_GUARD
 	 */
 	.macro set_sp
 		bl	__get_core_pos
 		cmp	r0, #CFG_TEE_CORE_NB_CORE
 		/* Unsupported CPU, park it before it breaks something */
 		bge	unhandled_cpu
+		add	r0, r0, #1
+
+		/* r2 = stack_tmp - STACK_TMP_GUARD */
+		adr	r3, stack_tmp_rel
+		ldr	r2, [r3]
+		add	r2, r2, r3
 
 		/*
 		 * stack_tmp_stride and stack_tmp_stride_rel are the
@@ -294,15 +263,10 @@ DECLARE_KEEP_INIT _start
 		ldr	r1, [r3]
 		ldr	r1, [r1, r3]
 
-		/* Same pattern as for stack_tmp_stride above */
-		adr	r3, stack_tmp_export_rel
-		ldr	r2, [r3]
-		ldr	r2, [r2, r3]
-
 		/*
-		 * r0 is core pos
+		 * r0 is core pos + 1
 		 * r1 is value of stack_tmp_stride
-		 * r2 is value of stack_tmp_export
+		 * r2 is value of stack_tmp + guard
 		 */
 		mul	r1, r0, r1
 		add	sp, r1, r2
@@ -363,7 +327,7 @@ DECLARE_KEEP_INIT _start
 LOCAL_FUNC reset_primary , : , .identity_map
 UNWIND(	.cantunwind)
 
-	/* preserve r4-r7: bootargs */
+	/* preserve r4-r8: bootargs */
 
 #ifdef CFG_WITH_PAGER
 	/*
@@ -388,8 +352,8 @@ UNWIND(	.cantunwind)
 	str	r0, cached_mem_end
 	ldr	r2, =__init_start
 copy_init:
-	ldmdb	r1!, {r3, r8-r12}
-	stmdb	r0!, {r3, r8-r12}
+	ldmdb	r1!, {r3, r9-r12}
+	stmdb	r0!, {r3, r9-r12}
 	cmp	r0, r2
 	bgt	copy_init
 #else
@@ -409,8 +373,8 @@ copy_init:
 	ldr	r2, =__end
 
 copy_init:
-	ldmdb	r1!, {r3, r8-r12}
-	stmdb	r0!, {r3, r8-r12}
+	ldmdb	r1!, {r3, r9-r12}
+	stmdb	r0!, {r3, r9-r12}
 	cmp	r0, r2
 	bgt	copy_init
 #endif
@@ -428,7 +392,7 @@ clear_bss:
 	cmp	r0, r1
 	bls	clear_bss
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	/*
 	 * Clear .nex_bss, this code obviously depends on the linker keeping
 	 * start/end of .bss at least 8 byte aligned.
@@ -478,6 +442,16 @@ shadow_stack_access_ok:
 	/* Enable Console */
 	bl	console_init
 
+	mov	r0, r8
+	mov	r1, #0
+	push	{r0, r1}
+	mov	r0, r4
+	mov	r1, r5
+	mov	r2, r6
+	mov	r3, r7
+	bl	boot_save_args
+	add	sp, sp, #(2 * 4)
+
 #ifdef CFG_PL310
 	bl	pl310_base
 	bl	arm_cl2_config
@@ -498,7 +472,6 @@ shadow_stack_access_ok:
 #endif
 
 #ifdef CFG_CORE_ASLR
-	mov	r0, r6
 	bl	get_aslr_seed
 #else
 	mov	r0, #0
@@ -509,12 +482,12 @@ shadow_stack_access_ok:
 
 #ifdef CFG_CORE_ASLR
 	/*
-	 * Process relocation information for updating with the new offset.
-	 * We're doing this now before MMU is enabled as some of the memory
-	 * will become write protected.
+	 * Process relocation information for updating with the virtual map
+	 * offset.  We're doing this now before MMU is enabled as some of
+	 * the memory will become write protected.
 	 */
 	ldr	r0, =boot_mmu_config
-	ldr	r0, [r0, #CORE_MMU_CONFIG_LOAD_OFFSET]
+	ldr	r0, [r0, #CORE_MMU_CONFIG_MAP_OFFSET]
 	/*
 	 * Update cached_mem_end address with load offset since it was
 	 * calculated before relocation.
@@ -537,7 +510,7 @@ shadow_stack_access_ok:
 	bl	console_init
 #endif
 
-#ifdef CFG_VIRTUALIZATION
+#ifdef CFG_NS_VIRTUALIZATION
 	/*
 	 * Initialize partition tables for each partition to
 	 * default_partition which has been relocated now to a different VA
@@ -545,10 +518,8 @@ shadow_stack_access_ok:
 	bl	core_mmu_set_default_prtn_tbl
 #endif
 
-	mov	r0, r4		/* pageable part address */
-	mov	r1, r5		/* ns-entry address */
 	bl	boot_init_primary_early
-#ifndef CFG_VIRTUALIZATION
+#ifndef CFG_NS_VIRTUALIZATION
 	mov	r9, sp
 	ldr	r0, =threads
 	ldr	r0, [r0, #THREAD_CTX_STACK_VA_END]
@@ -558,12 +529,24 @@ shadow_stack_access_ok:
 	mov	r0, #0
 	str	r0, [r8, #THREAD_CORE_LOCAL_FLAGS]
 #endif
-	mov	r0, r6		/* DT address */
 	bl	boot_init_primary_late
-#ifndef CFG_VIRTUALIZATION
+#ifndef CFG_NS_VIRTUALIZATION
 	mov	r0, #THREAD_CLF_TMP
 	str	r0, [r8, #THREAD_CORE_LOCAL_FLAGS]
 	mov	sp, r9
+#endif
+
+#ifdef _CFG_CORE_STACK_PROTECTOR
+	/* Update stack canary value */
+	sub	sp, sp, #0x8
+	mov	r0, sp
+	mov	r1, #1
+	mov	r2, #0x4
+	bl	plat_get_random_stack_canaries
+	ldr	r0, [sp]
+	ldr	r1, =__stack_chk_guard
+	str	r0, [r1]
+	add	sp, sp, #0x8
 #endif
 
 	/*
@@ -594,39 +577,40 @@ shadow_stack_access_ok:
 	 * next entry. Matches the thread_init_boot_thread() in
 	 * boot.c.
 	 */
-#ifndef CFG_VIRTUALIZATION
+#ifndef CFG_NS_VIRTUALIZATION
 	bl 	thread_clr_boot_thread
 #endif
 
 #ifdef CFG_CORE_FFA
 	ldr	r0, =cpu_on_handler
 	/*
-	 * Compensate for the load offset since cpu_on_handler() is
+	 * Compensate for the virtual map offset since cpu_on_handler() is
 	 * called with MMU off.
 	 */
-	ldr	r1, boot_mmu_config + CORE_MMU_CONFIG_LOAD_OFFSET
+	ldr	r1, boot_mmu_config + CORE_MMU_CONFIG_MAP_OFFSET
 	sub	r0, r0, r1
-	bl	ffa_secondary_cpu_ep_register
+	bl	thread_spmc_register_secondary_ep
 	b	thread_ffa_msg_wait
 #else /* CFG_CORE_FFA */
 
 #if defined(CFG_WITH_ARM_TRUSTED_FW)
 	ldr	r0, =boot_mmu_config
-	ldr	r0, [r0, #CORE_MMU_CONFIG_LOAD_OFFSET]
+	ldr	r0, [r0, #CORE_MMU_CONFIG_MAP_OFFSET]
 	ldr	r1, =thread_vector_table
 	/* Pass the vector address returned from main_init */
 	sub	r1, r1, r0
 #else
-	/* realy standard bootarg #1 and #2 to non secure entry */
+	/* Relay standard bootarg #1 and #2 to non-secure entry */
 	mov	r4, #0
 	mov	r3, r6		/* std bootarg #2 for register R2 */
-	mov	r2, r7		/* std bootarg #1 for register R1 */
+	mov	r2, r5		/* std bootarg #1 for register R1 */
 	mov	r1, #0
 #endif /* CFG_WITH_ARM_TRUSTED_FW */
 
 	mov	r0, #TEESMC_OPTEED_RETURN_ENTRY_DONE
 	smc	#0
-	b	.	/* SMC should not return */
+	/* SMC should not return */
+	panic_at_smc_return
 #endif /* CFG_CORE_FFA */
 END_FUNC reset_primary
 
@@ -665,7 +649,7 @@ LOCAL_FUNC relocate , :
 	ldr	r2, [r12, #BOOT_EMBDATA_RELOC_OFFSET]
 	ldr	r3, [r12, #BOOT_EMBDATA_RELOC_LEN]
 
-	mov_imm	r1, TEE_RAM_START
+	mov_imm	r1, TEE_LOAD_ADDR
 	add	r2, r2, r12	/* start of relocations */
 	add	r3, r3, r2	/* end of relocations */
 
@@ -674,9 +658,9 @@ LOCAL_FUNC relocate , :
 	 * compressed format created by get_reloc_bin() in
 	 * scripts/gen_tee_bin.py
 	 *
-	 * All the R_ARM_RELATIVE relocations are translated into a list
-	 * list of 32-bit offsets from TEE_RAM_START. At each address a
-	 * 32-bit value pointed out which increased with the load offset.
+	 * All the R_ARM_RELATIVE relocations are translated into a list of
+	 * 32-bit offsets from TEE_LOAD_ADDR. At each address a 32-bit
+	 * value pointed out which increased with the load offset.
 	 */
 
 #ifdef CFG_WITH_PAGER
@@ -823,9 +807,9 @@ LOCAL_FUNC enable_mmu , : , .identity_map
 	bx	lr
 END_FUNC enable_mmu
 
-LOCAL_DATA stack_tmp_export_rel , :
-	.word	stack_tmp_export - stack_tmp_export_rel
-END_DATA stack_tmp_export_rel
+LOCAL_DATA stack_tmp_rel , :
+	.word	stack_tmp - stack_tmp_rel - STACK_TMP_GUARD
+END_DATA stack_tmp_rel
 
 LOCAL_DATA stack_tmp_stride_rel , :
 	.word	stack_tmp_stride - stack_tmp_stride_rel
@@ -876,17 +860,6 @@ UNWIND(	.cantunwind)
 	wait_primary
 
 	set_sp
-#ifdef CFG_CORE_ASLR
-	/*
-	 * stack_tmp_export which is used as base when initializing sp has
-	 * been relocated to the new offset. Since MMU isn't enabled on
-	 * this CPU yet we need to restore the corresponding physical
-	 * address.
-	 */
-	adr	r0, boot_mmu_config
-	ldr	r0, [r0, #CORE_MMU_CONFIG_LOAD_OFFSET]
-	sub	sp, sp, r0
-#endif
 
 #if defined (CFG_BOOT_SECONDARY_REQUEST)
 	/* if L1 is not invalidated before, do it here */
@@ -907,7 +880,7 @@ UNWIND(	.cantunwind)
 	bl	boot_core_hpen
 	ldm	r0, {r0, r6}
 #else
-	mov	r0, r5		/* ns-entry address */
+	mov	r0, r8		/* ns-entry address */
 	mov	r6, #0
 #endif
 	bl	boot_init_secondary
@@ -918,7 +891,8 @@ UNWIND(	.cantunwind)
 	mov	r3, #0
 	mov	r4, #0
 	smc	#0
-	b	.	/* SMC should not return */
+	/* SMC should not return */
+	panic_at_smc_return
 END_FUNC reset_secondary
 DECLARE_KEEP_PAGER reset_secondary
 #endif /* defined(CFG_WITH_ARM_TRUSTED_FW) */

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright 2018-2021 NXP
+ * Copyright 2018-2021, 2024 NXP
  *
  * Implementation of ECC functions
  */
@@ -142,7 +142,9 @@ static enum caam_ecc_curve get_caam_curve(uint32_t tee_curve)
  * @key        Keypair
  * @size_bits  Key size in bits
  */
-static TEE_Result do_allocate_keypair(struct ecc_keypair *key, size_t size_bits)
+static TEE_Result do_allocate_keypair(struct ecc_keypair *key,
+				      uint32_t type __unused,
+				      size_t size_bits)
 {
 	ECC_TRACE("Allocate Keypair of %zu bits", size_bits);
 
@@ -169,8 +171,8 @@ static TEE_Result do_allocate_keypair(struct ecc_keypair *key, size_t size_bits)
 err:
 	ECC_TRACE("Allocation error");
 
-	crypto_bignum_free(key->d);
-	crypto_bignum_free(key->x);
+	crypto_bignum_free(&key->d);
+	crypto_bignum_free(&key->x);
 
 	return TEE_ERROR_OUT_OF_MEMORY;
 }
@@ -182,6 +184,7 @@ err:
  * @size_bits  Key size in bits
  */
 static TEE_Result do_allocate_publickey(struct ecc_public_key *key,
+					uint32_t type __unused,
 					size_t size_bits)
 {
 	ECC_TRACE("Allocate Public Key of %zu bits", size_bits);
@@ -204,7 +207,7 @@ static TEE_Result do_allocate_publickey(struct ecc_public_key *key,
 err:
 	ECC_TRACE("Allocation error");
 
-	crypto_bignum_free(key->x);
+	crypto_bignum_free(&key->x);
 
 	return TEE_ERROR_OUT_OF_MEMORY;
 }
@@ -216,8 +219,8 @@ err:
  */
 static void do_free_publickey(struct ecc_public_key *key)
 {
-	crypto_bignum_free(key->x);
-	crypto_bignum_free(key->y);
+	crypto_bignum_free(&key->x);
+	crypto_bignum_free(&key->y);
 }
 
 /*
@@ -238,6 +241,9 @@ static TEE_Result do_gen_keypair(struct ecc_keypair *key, size_t key_size)
 	uint32_t desclen = 0;
 
 	ECC_TRACE("Generate Keypair of %zu bits", key_size);
+
+	/* The key size must be a multiple of 8 bits */
+	key_size = ROUNDUP(key_size, 8);
 
 	/* Verify first if the curve is supported */
 	curve = get_caam_curve(key->curve);
@@ -317,6 +323,63 @@ out:
 }
 
 /*
+ * Check if MES_REP to be sent in descriptor is 00.
+ * Only required in case message length and key size is more than 40bytes
+ * because of limitation of Class 2 context register size on i.MX8M series.
+ * Example case below:
+ * When we try to do signature with P384-SHA384, in this case the key size
+ * will be 48bytes and Message size will also be 48bytes.
+ * This will work only when we set MES_REP = 0 in descriptor,
+ * but in this case, we don't need the padding to be done on the message.
+ *
+ * @msg_length: Message Length in bytes
+ * @key_size: Key size in bytes
+ */
+static bool msg_mes_rep(size_t msg_length, size_t key_size)
+{
+	return IS_ENABLED(CFG_NXP_CAAM_C2_CTX_REG_WA) && msg_length > 40 &&
+	       key_size > 40;
+}
+
+/*
+ * Check if padding is required on message to make it of same length
+ * as that of key size.
+ * Only required in case message length and key size is more than 40bytes
+ * because of limitation of Class 2 context register size on i.MX8M series.
+ * So this will be applicable on P384 and P521 ECC curves because these
+ * curves have key_size more than 40bytes.
+ *
+ * @msg_length: Message Length in bytes
+ * @key_size: Key size in bytes
+ */
+static bool padding_required(size_t msg_length, size_t key_size)
+{
+	return msg_mes_rep(msg_length, key_size) && msg_length < key_size;
+}
+
+/*
+ * Add padding of 00s in start of message
+ *
+ * @buf: Buffer in which padded message will be placed.
+ * @data: Original message
+ * @msg_length: Message Length in bytes
+ * @key_size: Key Size in bytes
+ */
+static TEE_Result add_padding(struct caambuf *buf, uint8_t *data,
+			      size_t msg_length, size_t key_size)
+{
+	enum caam_status retstatus = CAAM_FAILURE;
+
+	retstatus = caam_calloc_align_buf(buf, key_size);
+	if (retstatus != CAAM_NO_ERROR)
+		return caam_status_to_tee_result(retstatus);
+
+	memcpy(buf->data + key_size - msg_length, data, msg_length);
+
+	return TEE_SUCCESS;
+}
+
+/*
  * Signature of ECC message
  * Note the message to sign is already hashed
  *
@@ -337,6 +400,7 @@ static TEE_Result do_sign(struct drvcrypt_sign_data *sdata)
 	struct caamdmaobj sign_c = { };
 	struct caamdmaobj sign_d = { };
 	uint32_t pdb_sgt_flags = 0;
+	struct caambuf caambuf_msg = { };
 
 	ECC_TRACE("ECC Signature");
 
@@ -359,18 +423,34 @@ static TEE_Result do_sign(struct drvcrypt_sign_data *sdata)
 		goto out;
 	}
 
-	/* Prepare the input message CAAM Descriptor entry */
-	ret = caam_dmaobj_input_sgtbuf(&msg, sdata->message.data,
-				       sdata->message.length);
-	if (ret)
-		goto out;
+	ECC_DUMPBUF("Message", sdata->message.data, sdata->message.length);
+
+	if (padding_required(sdata->message.length, sdata->size_sec)) {
+		ret = add_padding(&caambuf_msg, sdata->message.data,
+				  sdata->message.length, sdata->size_sec);
+		if (ret)
+			goto out;
+
+		/* Prepare the input message CAAM Descriptor entry */
+		ret = caam_dmaobj_input_sgtbuf(&msg, caambuf_msg.data,
+					       caambuf_msg.length);
+		if (ret)
+			goto out;
+
+		ECC_DUMPBUF("Padded Message", caambuf_msg.data,
+			    caambuf_msg.length);
+	} else {
+		/* Prepare the input message CAAM Descriptor entry */
+		ret = caam_dmaobj_input_sgtbuf(&msg, sdata->message.data,
+					       sdata->message.length);
+		if (ret)
+			goto out;
+	}
 
 	if (msg.sgtbuf.sgt_type)
 		pdb_sgt_flags |= PDB_SGT_PKSIGN_MSG;
 
 	caam_dmaobj_cache_push(&msg);
-
-	ECC_DUMPBUF("Message", sdata->message.data, sdata->message.length);
 
 	/*
 	 * ReAllocate the signature result buffer with a maximum size
@@ -414,10 +494,15 @@ static TEE_Result do_sign(struct drvcrypt_sign_data *sdata)
 	caam_desc_add_ptr(desc, sign_c.sgtbuf.paddr);
 	/* Signature 2nd part */
 	caam_desc_add_ptr(desc, sign_d.sgtbuf.paddr);
-	/* Message length */
-	caam_desc_add_word(desc, sdata->message.length);
 
-	caam_desc_add_word(desc, DSA_SIGN(ECC));
+	if (msg_mes_rep(sdata->message.length, sdata->size_sec)) {
+		caam_desc_add_word(desc, DSA_SIGN(ECC, MES_REP));
+	} else {
+		/* Message length */
+		caam_desc_add_word(desc, sdata->message.length);
+
+		caam_desc_add_word(desc, DSA_SIGN(ECC, HASHED));
+	}
 
 	desclen = caam_desc_get_len(desc);
 	caam_desc_update_hdr(desc, DESC_HEADER_IDX(desclen, desclen - 1));
@@ -446,6 +531,7 @@ out:
 	caam_dmaobj_free(&msg);
 	caam_dmaobj_free(&sign_d);
 	caam_dmaobj_free(&sign_c);
+	caam_free_buf(&caambuf_msg);
 
 	return ret;
 }
@@ -471,6 +557,7 @@ static TEE_Result do_verify(struct drvcrypt_sign_data *sdata)
 	struct caamdmaobj sign_c = { };
 	struct caamdmaobj sign_d = { };
 	uint32_t pdb_sgt_flags = 0;
+	struct caambuf caambuf_msg = { };
 
 	ECC_TRACE("ECC Verify");
 
@@ -493,11 +580,24 @@ static TEE_Result do_verify(struct drvcrypt_sign_data *sdata)
 		goto out;
 	}
 
-	/* Prepare the input message CAAM Descriptor entry */
-	ret = caam_dmaobj_input_sgtbuf(&msg, sdata->message.data,
-				       sdata->message.length);
-	if (ret)
-		goto out;
+	if (padding_required(sdata->message.length, sdata->size_sec)) {
+		ret = add_padding(&caambuf_msg, sdata->message.data,
+				  sdata->message.length, sdata->size_sec);
+		if (ret)
+			goto out;
+
+		/* Prepare the input message CAAM Descriptor entry */
+		ret = caam_dmaobj_input_sgtbuf(&msg, caambuf_msg.data,
+					       caambuf_msg.length);
+		if (ret)
+			goto out;
+	} else {
+		/* Prepare the input message CAAM Descriptor entry */
+		ret = caam_dmaobj_input_sgtbuf(&msg, sdata->message.data,
+					       sdata->message.length);
+		if (ret)
+			goto out;
+	}
 
 	if (msg.sgtbuf.sgt_type)
 		pdb_sgt_flags |= PDB_SGT_PKVERIF_MSG;
@@ -550,10 +650,16 @@ static TEE_Result do_verify(struct drvcrypt_sign_data *sdata)
 	caam_desc_add_ptr(desc, sign_d.sgtbuf.paddr);
 	/* Temporary buffer */
 	caam_desc_add_ptr(desc, tmp.paddr);
-	/* Message length */
-	caam_desc_add_word(desc, sdata->message.length);
 
-	caam_desc_add_word(desc, DSA_VERIFY(ECC));
+	if (msg_mes_rep(sdata->message.length, sdata->size_sec)) {
+		caam_desc_add_word(desc, DSA_VERIFY(ECC, MES_REP));
+	} else {
+		/* Message length */
+		caam_desc_add_word(desc, sdata->message.length);
+
+		caam_desc_add_word(desc, DSA_VERIFY(ECC, HASHED));
+	}
+
 	desclen = caam_desc_get_len(desc);
 	caam_desc_update_hdr(desc, DESC_HEADER_IDX(desclen, desclen - 1));
 
@@ -581,6 +687,7 @@ out:
 	caam_dmaobj_free(&msg);
 	caam_dmaobj_free(&sign_c);
 	caam_dmaobj_free(&sign_d);
+	caam_free_buf(&caambuf_msg);
 
 	return ret;
 }

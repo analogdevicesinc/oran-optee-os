@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2017-2018, STMicroelectronics
+ * Copyright (c) 2017-2022, STMicroelectronics
  */
 
 #include <arm.h>
 #include <boot_api.h>
 #include <console.h>
+#include <drivers/clk.h>
+#include <drivers/rstctrl.h>
 #include <drivers/stm32mp1_pmic.h>
 #include <drivers/stm32mp1_rcc.h>
 #include <drivers/stpmic1.h>
-#include <dt-bindings/clock/stm32mp1-clks.h>
+#include <drivers/stm32mp_dt_bindings.h>
 #include <io.h>
 #include <kernel/cache_helpers.h>
 #include <kernel/delay.h>
@@ -113,7 +115,7 @@ void stm32mp_register_online_cpu(void)
 			stm32_pm_cpu_power_down_wfi();
 			panic();
 		}
-		stm32_clock_disable(RTCAPB);
+		clk_disable(stm32mp_rcc_clock_id_to_clk(RTCAPB));
 	}
 
 	core_state[pos] = CORE_ON;
@@ -130,6 +132,8 @@ static void raise_sgi0_as_secure(void)
 
 static void release_secondary_early_hpen(size_t __unused pos)
 {
+	struct itr_chip *itr_chip = interrupt_get_main_chip();
+
 	/* Need to send SIG#0 over Group0 after individual core 1 reset */
 	raise_sgi0_as_secure();
 	udelay(20);
@@ -140,7 +144,7 @@ static void release_secondary_early_hpen(size_t __unused pos)
 		   BOOT_API_A7_CORE1_MAGIC_NUMBER);
 
 	dsb_ishst();
-	itr_raise_sgi(GIC_SEC_SGI_0, TARGET_CPU1_GIC_MASK);
+	interrupt_raise_sgi(itr_chip, GIC_SEC_SGI_0, TARGET_CPU1_GIC_MASK);
 }
 
 /* Override default psci_cpu_on() with platform specific sequence */
@@ -207,7 +211,8 @@ int psci_cpu_off(void)
 	unlock_state_access(exceptions);
 
 	/* Enable BKPREG access for the disabled CPU */
-	stm32_clock_enable(RTCAPB);
+	if (clk_enable(stm32mp_rcc_clock_id_to_clk(RTCAPB)))
+		panic();
 
 	thread_mask_exceptions(THREAD_EXCP_ALL);
 	stm32_pm_cpu_power_down_wfi();
@@ -237,11 +242,7 @@ void __noreturn psci_system_off(void)
 /* Override default psci_system_reset() with platform specific sequence */
 void __noreturn psci_system_reset(void)
 {
-	vaddr_t rcc_base = stm32_rcc_base();
-
-	DMSG("core %u", get_core_pos());
-
-	io_write32(rcc_base + RCC_MP_GRSTCSETR, RCC_MP_GRSTCSETR_MPSYSRST);
+	rstctrl_assert(stm32mp_rcc_reset_id_to_rstctrl(MPSYST_R));
 	udelay(100);
 	panic();
 }

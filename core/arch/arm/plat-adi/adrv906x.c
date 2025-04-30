@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2022 Analog Devices Incorporated
+ * Copyright (c) 2022-2025 Analog Devices Incorporated
  */
 
 #include <common.h>
 #include <drivers/pl011.h>
 #include <kernel/boot.h>
+#include <kernel/dt.h>
 #include <libfdt.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
@@ -218,7 +219,7 @@ uint32_t plat_get_sysclk_freq(void)
 	return sysclk_freq;
 }
 
-void main_init_gic(void)
+void boot_primary_init_intc(void)
 {
 	vaddr_t addr;
 	TEE_Result ret;
@@ -244,5 +245,5 @@ void main_init_gic(void)
 	}
 
 	/* Do common initialization */
-	common_main_init_gic();
+	common_boot_primary_init_intc();
 }

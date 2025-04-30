@@ -82,9 +82,6 @@ register_phys_mem_pgdir(MEM_AREA_IO_SEC, SUNXI_SMC_BASE, TZC400_REG_SIZE);
 #define SMC_MASTER_BYPASS_EN_MASK 0x1
 #endif
 
-#ifdef GIC_BASE
-static struct gic_data gic_data;
-#endif
 #ifdef SUNXI_TZPC_BASE
 static void tzpc_init(void);
 #endif
@@ -126,25 +123,14 @@ static inline void tzpc_init(void)
 #endif /* SUNXI_TZPC_BASE */
 
 #ifndef CFG_WITH_ARM_TRUSTED_FW
-void main_init_gic(void)
+void boot_primary_init_intc(void)
 {
-	vaddr_t gicc_base;
-	vaddr_t gicd_base;
-
-	gicc_base = core_mmu_get_va(GIC_BASE + GICC_OFFSET, MEM_AREA_IO_SEC, 1);
-	gicd_base = core_mmu_get_va(GIC_BASE + GICD_OFFSET, MEM_AREA_IO_SEC, 1);
-
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(GIC_BASE + GICC_OFFSET, GIC_BASE + GICD_OFFSET);
 }
 
-void main_secondary_init_gic(void)
+void boot_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
+	gic_init_per_cpu();
 }
 #endif
 

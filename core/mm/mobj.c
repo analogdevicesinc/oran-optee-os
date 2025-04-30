@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /*
- * Copyright (c) 2016-2021, Linaro Limited
+ * Copyright (c) 2016-2022, Linaro Limited
  */
 
 #include <assert.h>
@@ -18,7 +18,6 @@
 #include <mm/tee_pager.h>
 #include <mm/vm.h>
 #include <optee_msg.h>
-#include <sm/optee_smc.h>
 #include <stdlib.h>
 #include <tee_api_types.h>
 #include <types_ext.h>
@@ -35,7 +34,8 @@ struct mobj *mobj_tee_ram_rw;
 struct mobj_phys {
 	struct mobj mobj;
 	enum buf_is_attr battr;
-	uint32_t cattr; /* Defined by TEE_MATTR_CACHE_* in tee_mmu_types.h */
+	/* Defined by TEE_MATTR_MEM_TYPE_* in tee_mmu_types.h */
+	uint32_t mem_type;
 	vaddr_t va;
 	paddr_t pa;
 };
@@ -75,14 +75,14 @@ static TEE_Result mobj_phys_get_pa(struct mobj *mobj, size_t offs,
 }
 DECLARE_KEEP_PAGER(mobj_phys_get_pa);
 
-static TEE_Result mobj_phys_get_cattr(struct mobj *mobj, uint32_t *cattr)
+static TEE_Result mobj_phys_get_mem_type(struct mobj *mobj, uint32_t *mem_type)
 {
 	struct mobj_phys *moph = to_mobj_phys(mobj);
 
-	if (!cattr)
+	if (!mem_type)
 		return TEE_ERROR_GENERIC;
 
-	*cattr = moph->cattr;
+	*mem_type = moph->mem_type;
 	return TEE_SUCCESS;
 }
 
@@ -120,11 +120,12 @@ static void mobj_phys_free(struct mobj *mobj)
  * Note: this variable is weak just to ease breaking its dependency chain
  * when added to the unpaged area.
  */
-const struct mobj_ops mobj_phys_ops __weak __rodata_unpaged("mobj_phys_ops") = {
+const struct mobj_ops mobj_phys_ops
+__weak __relrodata_unpaged("mobj_phys_ops") = {
 	.get_va = mobj_phys_get_va,
 	.get_pa = mobj_phys_get_pa,
 	.get_phys_offs = NULL, /* only offset 0 */
-	.get_cattr = mobj_phys_get_cattr,
+	.get_mem_type = mobj_phys_get_mem_type,
 	.matches = mobj_phys_matches,
 	.free = mobj_phys_free,
 };
@@ -135,7 +136,7 @@ static struct mobj_phys *to_mobj_phys(struct mobj *mobj)
 	return container_of(mobj, struct mobj_phys, mobj);
 }
 
-static struct mobj *mobj_phys_init(paddr_t pa, size_t size, uint32_t cattr,
+static struct mobj *mobj_phys_init(paddr_t pa, size_t size, uint32_t mem_type,
 				   enum buf_is_attr battr,
 				   enum teecore_memtypes area_type)
 {
@@ -169,7 +170,7 @@ static struct mobj *mobj_phys_init(paddr_t pa, size_t size, uint32_t cattr,
 		return NULL;
 
 	moph->battr = battr;
-	moph->cattr = cattr;
+	moph->mem_type = mem_type;
 	moph->mobj.size = size;
 	moph->mobj.ops = &mobj_phys_ops;
 	refcount_set(&moph->mobj.refc, 1);
@@ -179,7 +180,7 @@ static struct mobj *mobj_phys_init(paddr_t pa, size_t size, uint32_t cattr,
 	return &moph->mobj;
 }
 
-struct mobj *mobj_phys_alloc(paddr_t pa, size_t size, uint32_t cattr,
+struct mobj *mobj_phys_alloc(paddr_t pa, size_t size, uint32_t mem_type,
 			     enum buf_is_attr battr)
 {
 	enum teecore_memtypes area_type;
@@ -202,7 +203,7 @@ struct mobj *mobj_phys_alloc(paddr_t pa, size_t size, uint32_t cattr,
 		return NULL;
 	}
 
-	return mobj_phys_init(pa, size, cattr, battr, area_type);
+	return mobj_phys_init(pa, size, mem_type, battr, area_type);
 }
 
 /*
@@ -224,7 +225,8 @@ static void *mobj_virt_get_va(struct mobj *mobj, size_t offset,
  * Note: this variable is weak just to ease breaking its dependency chain
  * when added to the unpaged area.
  */
-const struct mobj_ops mobj_virt_ops __weak __rodata_unpaged("mobj_virt_ops") = {
+const struct mobj_ops mobj_virt_ops
+__weak __relrodata_unpaged("mobj_virt_ops") = {
 	.get_va = mobj_virt_get_va,
 };
 
@@ -234,105 +236,6 @@ static void mobj_virt_assert_type(struct mobj *mobj __maybe_unused)
 }
 
 struct mobj mobj_virt = { .ops = &mobj_virt_ops, .size = SIZE_MAX };
-
-/*
- * mobj_mm implementation
- */
-
-struct mobj_mm {
-	tee_mm_entry_t *mm;
-	struct mobj *parent_mobj;
-	struct mobj mobj;
-};
-
-static struct mobj_mm *to_mobj_mm(struct mobj *mobj);
-
-static size_t mobj_mm_offs(struct mobj *mobj, size_t offs)
-{
-	tee_mm_entry_t *mm = to_mobj_mm(mobj)->mm;
-
-	return (mm->offset << mm->pool->shift) + offs;
-}
-
-static void *mobj_mm_get_va(struct mobj *mobj, size_t offs, size_t len)
-{
-	return mobj_get_va(to_mobj_mm(mobj)->parent_mobj,
-			   mobj_mm_offs(mobj, offs), len);
-}
-
-
-static TEE_Result mobj_mm_get_pa(struct mobj *mobj, size_t offs,
-				    size_t granule, paddr_t *pa)
-{
-	return mobj_get_pa(to_mobj_mm(mobj)->parent_mobj,
-			   mobj_mm_offs(mobj, offs), granule, pa);
-}
-DECLARE_KEEP_PAGER(mobj_mm_get_pa);
-
-static size_t mobj_mm_get_phys_offs(struct mobj *mobj, size_t granule)
-{
-	return mobj_get_phys_offs(to_mobj_mm(mobj)->parent_mobj, granule);
-}
-
-static TEE_Result mobj_mm_get_cattr(struct mobj *mobj, uint32_t *cattr)
-{
-	return mobj_get_cattr(to_mobj_mm(mobj)->parent_mobj, cattr);
-}
-
-static bool mobj_mm_matches(struct mobj *mobj, enum buf_is_attr attr)
-{
-	return mobj_matches(to_mobj_mm(mobj)->parent_mobj, attr);
-}
-
-static void mobj_mm_free(struct mobj *mobj)
-{
-	struct mobj_mm *m = to_mobj_mm(mobj);
-
-	tee_mm_free(m->mm);
-	free(m);
-}
-
-/*
- * Note: this variable is weak just to ease breaking its dependency chain
- * when added to the unpaged area.
- */
-const struct mobj_ops mobj_mm_ops __weak __rodata_unpaged("mobj_mm_ops") = {
-	.get_va = mobj_mm_get_va,
-	.get_pa = mobj_mm_get_pa,
-	.get_phys_offs = mobj_mm_get_phys_offs,
-	.get_cattr = mobj_mm_get_cattr,
-	.matches = mobj_mm_matches,
-	.free = mobj_mm_free,
-};
-
-static struct mobj_mm *to_mobj_mm(struct mobj *mobj)
-{
-	assert(mobj->ops == &mobj_mm_ops);
-	return container_of(mobj, struct mobj_mm, mobj);
-}
-
-struct mobj *mobj_mm_alloc(struct mobj *mobj_parent, size_t size,
-			      tee_mm_pool_t *pool)
-{
-	struct mobj_mm *m = calloc(1, sizeof(*m));
-
-	if (!m)
-		return NULL;
-
-	m->mm = tee_mm_alloc(pool, size);
-	if (!m->mm) {
-		free(m);
-		return NULL;
-	}
-
-	m->parent_mobj = mobj_parent;
-	m->mobj.size = size;
-	m->mobj.ops = &mobj_mm_ops;
-	refcount_set(&m->mobj.refc, 1);
-
-	return &m->mobj;
-}
-
 
 /*
  * mobj_shm implementation. mobj_shm represents buffer in predefined shm region
@@ -395,6 +298,17 @@ static bool mobj_shm_matches(struct mobj *mobj __unused, enum buf_is_attr attr)
 	return attr == CORE_MEM_NSEC_SHM || attr == CORE_MEM_NON_SEC;
 }
 
+static TEE_Result mobj_shm_get_mem_type(struct mobj *mobj __unused,
+					uint32_t *mem_type)
+{
+	if (!mem_type)
+		return TEE_ERROR_GENERIC;
+
+	*mem_type = TEE_MATTR_MEM_TYPE_CACHED;
+
+	return TEE_SUCCESS;
+}
+
 static void mobj_shm_free(struct mobj *mobj)
 {
 	struct mobj_shm *m = to_mobj_shm(mobj);
@@ -411,10 +325,12 @@ static uint64_t mobj_shm_get_cookie(struct mobj *mobj)
  * Note: this variable is weak just to ease breaking its dependency chain
  * when added to the unpaged area.
  */
-const struct mobj_ops mobj_shm_ops __weak __rodata_unpaged("mobj_shm_ops") = {
+const struct mobj_ops mobj_shm_ops
+__weak __relrodata_unpaged("mobj_shm_ops") = {
 	.get_va = mobj_shm_get_va,
 	.get_pa = mobj_shm_get_pa,
 	.get_phys_offs = mobj_shm_get_phys_offs,
+	.get_mem_type = mobj_shm_get_mem_type,
 	.matches = mobj_shm_matches,
 	.free = mobj_shm_free,
 	.get_cookie = mobj_shm_get_cookie,
@@ -439,6 +355,7 @@ struct mobj *mobj_shm_alloc(paddr_t pa, size_t size, uint64_t cookie)
 
 	m->mobj.size = size;
 	m->mobj.ops = &mobj_shm_ops;
+	m->mobj.phys_granule = SMALL_PAGE_SIZE;
 	refcount_set(&m->mobj.refc, 1);
 	m->pa = pa;
 	m->cookie = cookie;
@@ -446,133 +363,25 @@ struct mobj *mobj_shm_alloc(paddr_t pa, size_t size, uint64_t cookie)
 	return &m->mobj;
 }
 
-#ifdef CFG_PAGED_USER_TA
-/*
- * mobj_seccpy_shm implementation
- */
-
-struct mobj_seccpy_shm {
-	struct user_ta_ctx *utc;
-	vaddr_t va;
-	struct mobj mobj;
-	struct fobj *fobj;
-};
-
-static bool __maybe_unused mobj_is_seccpy_shm(struct mobj *mobj);
-
-static struct mobj_seccpy_shm *to_mobj_seccpy_shm(struct mobj *mobj)
-{
-	assert(mobj_is_seccpy_shm(mobj));
-	return container_of(mobj, struct mobj_seccpy_shm, mobj);
-}
-
-static void *mobj_seccpy_shm_get_va(struct mobj *mobj, size_t offs, size_t len)
-{
-	struct mobj_seccpy_shm *m = to_mobj_seccpy_shm(mobj);
-
-	if (&m->utc->ta_ctx.ts_ctx != thread_get_tsd()->ctx)
-		return NULL;
-
-	if (!mobj_check_offset_and_len(mobj, offs, len))
-		return NULL;
-	return (void *)(m->va + offs);
-}
-
-static bool mobj_seccpy_shm_matches(struct mobj *mobj __maybe_unused,
-				 enum buf_is_attr attr)
-{
-	assert(mobj_is_seccpy_shm(mobj));
-
-	return attr == CORE_MEM_SEC || attr == CORE_MEM_TEE_RAM;
-}
-
-static void mobj_seccpy_shm_free(struct mobj *mobj)
-{
-	struct mobj_seccpy_shm *m = to_mobj_seccpy_shm(mobj);
-
-	tee_pager_rem_um_region(&m->utc->uctx, m->va, mobj->size);
-	vm_rem_rwmem(&m->utc->uctx, mobj, m->va);
-	fobj_put(m->fobj);
-	free(m);
-}
-
-static struct fobj *mobj_seccpy_shm_get_fobj(struct mobj *mobj)
-{
-	return fobj_get(to_mobj_seccpy_shm(mobj)->fobj);
-}
-
-/*
- * Note: this variable is weak just to ease breaking its dependency chain
- * when added to the unpaged area.
- */
-const struct mobj_ops mobj_seccpy_shm_ops
-__weak __rodata_unpaged("mobj_seccpy_shm_ops") = {
-	.get_va = mobj_seccpy_shm_get_va,
-	.matches = mobj_seccpy_shm_matches,
-	.free = mobj_seccpy_shm_free,
-	.get_fobj = mobj_seccpy_shm_get_fobj,
-};
-
-static bool mobj_is_seccpy_shm(struct mobj *mobj)
-{
-	return mobj && mobj->ops == &mobj_seccpy_shm_ops;
-}
-
-struct mobj *mobj_seccpy_shm_alloc(size_t size)
-{
-	struct thread_specific_data *tsd = thread_get_tsd();
-	struct mobj_seccpy_shm *m;
-	struct user_ta_ctx *utc;
-	vaddr_t va = 0;
-
-	if (!is_user_ta_ctx(tsd->ctx))
-		return NULL;
-	utc = to_user_ta_ctx(tsd->ctx);
-
-	m = calloc(1, sizeof(*m));
-	if (!m)
-		return NULL;
-
-	m->mobj.size = size;
-	m->mobj.ops = &mobj_seccpy_shm_ops;
-	refcount_set(&m->mobj.refc, 1);
-
-	if (vm_add_rwmem(&utc->uctx, &m->mobj, &va) != TEE_SUCCESS)
-		goto bad;
-
-	m->fobj = fobj_rw_paged_alloc(ROUNDUP(size, SMALL_PAGE_SIZE) /
-				      SMALL_PAGE_SIZE);
-	if (tee_pager_add_um_region(&utc->uctx, va, m->fobj,
-				    TEE_MATTR_PRW | TEE_MATTR_URW))
-		goto bad;
-
-	m->va = va;
-	m->utc = to_user_ta_ctx(tsd->ctx);
-	return &m->mobj;
-bad:
-	if (va)
-		vm_rem_rwmem(&utc->uctx, &m->mobj, va);
-	fobj_put(m->fobj);
-	free(m);
-	return NULL;
-}
-
-
-#endif /*CFG_PAGED_USER_TA*/
-
 struct mobj_with_fobj {
 	struct fobj *fobj;
 	struct file *file;
 	struct mobj mobj;
+	uint8_t mem_type;
 };
 
 const struct mobj_ops mobj_with_fobj_ops;
 
-struct mobj *mobj_with_fobj_alloc(struct fobj *fobj, struct file *file)
+struct mobj *mobj_with_fobj_alloc(struct fobj *fobj, struct file *file,
+				  uint32_t mem_type)
 {
 	struct mobj_with_fobj *m = NULL;
 
+	assert(!(mem_type & ~TEE_MATTR_MEM_TYPE_MASK));
+
 	if (!fobj)
+		return NULL;
+	if (mem_type > UINT8_MAX)
 		return NULL;
 
 	m = calloc(1, sizeof(*m));
@@ -585,6 +394,7 @@ struct mobj *mobj_with_fobj_alloc(struct fobj *fobj, struct file *file)
 	m->mobj.phys_granule = SMALL_PAGE_SIZE;
 	m->fobj = fobj_get(fobj);
 	m->file = file_get(file);
+	m->mem_type = mem_type;
 
 	return &m->mobj;
 }
@@ -624,14 +434,15 @@ static struct fobj *mobj_with_fobj_get_fobj(struct mobj *mobj)
 	return fobj_get(to_mobj_with_fobj(mobj)->fobj);
 }
 
-static TEE_Result mobj_with_fobj_get_cattr(struct mobj *mobj __unused,
-					   uint32_t *cattr)
+static TEE_Result mobj_with_fobj_get_mem_type(struct mobj *mobj,
+					      uint32_t *mem_type)
 {
-	if (!cattr)
+	struct mobj_with_fobj *m = to_mobj_with_fobj(mobj);
+
+	if (!mem_type)
 		return TEE_ERROR_GENERIC;
 
-	/* All fobjs are mapped as normal cached memory */
-	*cattr = TEE_MATTR_CACHE_CACHED;
+	*mem_type = m->mem_type;
 
 	return TEE_SUCCESS;
 }
@@ -668,20 +479,17 @@ DECLARE_KEEP_PAGER(mobj_with_fobj_get_pa);
  * when added to the unpaged area.
  */
 const struct mobj_ops mobj_with_fobj_ops
-__weak __rodata_unpaged("mobj_with_fobj_ops") = {
+__weak __relrodata_unpaged("mobj_with_fobj_ops") = {
 	.matches = mobj_with_fobj_matches,
 	.free = mobj_with_fobj_free,
 	.get_fobj = mobj_with_fobj_get_fobj,
-	.get_cattr = mobj_with_fobj_get_cattr,
+	.get_mem_type = mobj_with_fobj_get_mem_type,
 	.get_pa = mobj_with_fobj_get_pa,
 };
 
 #ifdef CFG_PAGED_USER_TA
 bool mobj_is_paged(struct mobj *mobj)
 {
-	if (mobj->ops == &mobj_seccpy_shm_ops)
-		return true;
-
 	if (mobj->ops == &mobj_with_fobj_ops &&
 	    !to_mobj_with_fobj(mobj)->fobj->ops->get_pa)
 		return true;
@@ -694,14 +502,15 @@ static TEE_Result mobj_init(void)
 {
 	mobj_sec_ddr = mobj_phys_alloc(tee_mm_sec_ddr.lo,
 				       tee_mm_sec_ddr.size,
-				       OPTEE_SMC_SHM_CACHED, CORE_MEM_TA_RAM);
+				       TEE_MATTR_MEM_TYPE_CACHED,
+				       CORE_MEM_TA_RAM);
 	if (!mobj_sec_ddr)
 		panic("Failed to register secure ta ram");
 
 	if (IS_ENABLED(CFG_CORE_RWDATA_NOEXEC)) {
 		mobj_tee_ram_rx = mobj_phys_init(0,
 						 VCORE_UNPG_RX_SZ,
-						 TEE_MATTR_CACHE_CACHED,
+						 TEE_MATTR_MEM_TYPE_CACHED,
 						 CORE_MEM_TEE_RAM,
 						 MEM_AREA_TEE_RAM_RX);
 		if (!mobj_tee_ram_rx)
@@ -709,7 +518,7 @@ static TEE_Result mobj_init(void)
 
 		mobj_tee_ram_rw = mobj_phys_init(0,
 						 VCORE_UNPG_RW_SZ,
-						 TEE_MATTR_CACHE_CACHED,
+						 TEE_MATTR_MEM_TYPE_CACHED,
 						 CORE_MEM_TEE_RAM,
 						 MEM_AREA_TEE_RAM_RW_DATA);
 		if (!mobj_tee_ram_rw)
@@ -719,7 +528,7 @@ static TEE_Result mobj_init(void)
 						 VCORE_UNPG_RW_PA +
 						 VCORE_UNPG_RW_SZ -
 						 TEE_RAM_START,
-						 TEE_MATTR_CACHE_CACHED,
+						 TEE_MATTR_MEM_TYPE_CACHED,
 						 CORE_MEM_TEE_RAM,
 						 MEM_AREA_TEE_RAM_RW_DATA);
 		if (!mobj_tee_ram_rw)

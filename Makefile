@@ -18,6 +18,7 @@ unexport MAKEFILE_LIST
 # nonzero status). Useful since a few recipes use shell redirection.
 .DELETE_ON_ERROR:
 
+include mk/macros.mk
 include mk/checkconf.mk
 
 .PHONY: all
@@ -41,7 +42,7 @@ $(foreach op,$(ops),$(eval override $(op)))
 endif
 
 # Make these default for now
-$(call force,ARCH,arm)
+ARCH            ?= arm
 PLATFORM        ?= vexpress
 # Default value for PLATFORM_FLAVOR is set in plat-$(PLATFORM)/conf.mk
 ifeq ($O,)
@@ -79,7 +80,7 @@ include core/core.mk
 
 # Platform/arch config is supposed to assign the targets
 ta-targets ?= invalid
-default-user-ta-target ?= $(firstword $(ta-targets))
+$(call force,default-user-ta-target,$(firstword $(ta-targets)))
 
 ifeq ($(CFG_WITH_USER_TA),y)
 include ldelf/ldelf.mk
@@ -90,11 +91,13 @@ endef
 $(foreach t, $(ta-targets), $(eval $(call build-ta-target, $(t))))
 
 # Build user TAs included in this git
+ifeq ($(CFG_BUILD_IN_TREE_TA),y)
 define build-user-ta
 ta-mk-file := $(1)
 include ta/mk/build-user-ta.mk
 endef
 $(foreach t, $(sort $(wildcard ta/*/user_ta.mk)), $(eval $(call build-user-ta,$(t))))
+endif
 endif
 
 include mk/cleandirs.mk
@@ -106,12 +109,14 @@ clean:
 	${q}dirs="$(call cleandirs-for-rmdir)"; if [ "$$dirs" ]; then $(RMDIR) $$dirs; fi
 	@if [ "$(out-dir)" != "$(O)" ]; then $(cmd-echo-silent) '  CLEAN   $(O)'; fi
 	${q}if [ -d "$(O)" ]; then $(RMDIR) $(O); fi
+	${q}rm -f compile_commands.json
 
 .PHONY: cscope
 cscope:
 	@echo '  CSCOPE  .'
 	${q}rm -f cscope.*
-	${q}find $(PWD) -name "*.[chSs]" | grep -v export-ta_ > cscope.files
+	${q}find $(PWD) -name "*.[chSs]" | grep -v export-ta_ | \
+		grep -v -F _init.ld.S | grep -v -F _unpaged.ld.S > cscope.files
 	${q}cscope -b -q -k
 
 .PHONY: checkpatch checkpatch-staging checkpatch-working

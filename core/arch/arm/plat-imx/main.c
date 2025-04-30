@@ -3,7 +3,7 @@
  * Copyright (C) 2015 Freescale Semiconductor, Inc.
  * Copyright (c) 2016, Wind River Systems.
  * All rights reserved.
- * Copyright 2019 NXP
+ * Copyright 2019, 2023 NXP
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -33,18 +33,11 @@
 #include <drivers/gic.h>
 #include <drivers/imx_uart.h>
 #include <imx.h>
-#include <io.h>
 #include <kernel/boot.h>
-#include <kernel/interrupt.h>
-#include <kernel/misc.h>
-#include <kernel/panic.h>
 #include <mm/core_memprot.h>
 #include <mm/core_mmu.h>
 #include <platform_config.h>
-#include <sm/optee_smc.h>
 #include <stdint.h>
-
-static struct gic_data gic_data __nex_bss;
 
 static struct imx_uart_data console_data __nex_bss;
 
@@ -97,15 +90,12 @@ register_phys_mem_pgdir(MEM_AREA_IO_SEC,
 			CORE_MMU_PGDIR_SIZE);
 #endif
 
-register_dynamic_shm(CFG_NSEC_DDR_0_BASE, CFG_NSEC_DDR_0_SIZE);
-#if defined(CFG_NSEC_DDR_1_BASE) && defined(CFG_NSEC_DDR_1_SIZE)
-register_dynamic_shm(CFG_NSEC_DDR_1_BASE, CFG_NSEC_DDR_1_SIZE);
+#ifdef CFG_DRAM_BASE
+register_ddr(CFG_DRAM_BASE, CFG_DDR_SIZE);
 #endif
-
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
-}
+#ifdef CFG_NSEC_DDR_1_BASE
+register_ddr(CFG_NSEC_DDR_1_BASE, CFG_NSEC_DDR_1_SIZE);
+#endif
 
 void console_init(void)
 {
@@ -115,40 +105,18 @@ void console_init(void)
 #endif
 }
 
-void main_init_gic(void)
+void boot_primary_init_intc(void)
 {
-#ifdef CFG_ARM_GICV3
-	vaddr_t gicd_base;
-
-	gicd_base = core_mmu_get_va(GICD_BASE, MEM_AREA_IO_SEC, 0x10000);
-
-	if (!gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, 0, gicd_base);
-	itr_init(&gic_data.chip);
+#ifdef GICD_BASE
+	gic_init(0, GICD_BASE);
 #else
-	vaddr_t gicc_base;
-	vaddr_t gicd_base;
-
-	gicc_base = core_mmu_get_va(GIC_BASE + GICC_OFFSET, MEM_AREA_IO_SEC,
-				    1);
-	gicd_base = core_mmu_get_va(GIC_BASE + GICD_OFFSET, MEM_AREA_IO_SEC,
-				    0x10000);
-
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	/* Initialize GIC */
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(GIC_BASE + GICC_OFFSET, GIC_BASE + GICD_OFFSET);
 #endif
 }
 
 #if CFG_TEE_CORE_NB_CORE > 1
-void main_secondary_init_gic(void)
+void boot_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
+	gic_init_per_cpu();
 }
 #endif

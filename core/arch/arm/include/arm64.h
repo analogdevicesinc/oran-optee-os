@@ -1,22 +1,45 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright (c) 2015, Linaro Limited
+ * Copyright (c) 2023, Arm Limited
  */
-#ifndef ARM64_H
-#define ARM64_H
+#ifndef __ARM64_H
+#define __ARM64_H
 
 #include <compiler.h>
 #include <sys/cdefs.h>
 #include <stdint.h>
 #include <util.h>
 
-#define SCTLR_M		BIT32(0)
-#define SCTLR_A		BIT32(1)
-#define SCTLR_C		BIT32(2)
-#define SCTLR_SA	BIT32(3)
-#define SCTLR_I		BIT32(12)
-#define SCTLR_WXN	BIT32(19)
-#define SCTLR_SPAN	BIT32(23)
+#define SCTLR_M		BIT64(0)
+#define SCTLR_A		BIT64(1)
+#define SCTLR_C		BIT64(2)
+#define SCTLR_SA	BIT64(3)
+#define SCTLR_I		BIT64(12)
+#define SCTLR_ENDB	BIT64(13)
+#define SCTLR_WXN	BIT64(19)
+#define SCTLR_SPAN	BIT64(23)
+#define SCTLR_ENDA	BIT64(27)
+#define SCTLR_ENIB	BIT64(30)
+#define SCTLR_ENIA	BIT64(31)
+#define SCTLR_BT0	BIT64(35)
+#define SCTLR_BT1	BIT64(36)
+#define SCTLR_ITFSB	BIT64(37)
+
+#define SCTLR_TCF_MASK	SHIFT_U64(0x3, 40)
+#define SCTLR_TCF_NONE	SHIFT_U64(0x0, 40)
+#define SCTLR_TCF_SYNC	SHIFT_U64(0x1, 40)
+#define SCTLR_TCF_ASYNC	SHIFT_U64(0x2, 40)
+#define SCTLR_TCF_ASYMM	SHIFT_U64(0x3, 40)
+
+#define SCTLR_TCF0_MASK	SHIFT_U64(0x3, 38)
+#define SCTLR_TCF0_NONE	SHIFT_U64(0x0, 38)
+#define SCTLR_TCF0_SYNC	SHIFT_U64(0x1, 38)
+#define SCTLR_TCF0_ASYNC SHIFT_U64(0x2, 38)
+#define SCTLR_TCF0_ASYMM SHIFT_U64(0x3, 38)
+
+#define SCTLR_ATA0	BIT64(42)
+#define SCTLR_ATA	BIT64(43)
 
 #define TTBR_ASID_MASK		U(0xff)
 #define TTBR_ASID_SHIFT		U(48)
@@ -59,6 +82,8 @@
 #define SPSR_64_DAIF_SHIFT	U(6)
 #define SPSR_64_DAIF_MASK	U(0xf)
 
+#define SPSR_64_PAN		BIT64(22)
+
 #define SPSR_32_AIF_SHIFT	U(6)
 #define SPSR_32_AIF_MASK	U(0x7)
 
@@ -92,20 +117,24 @@
 
 
 #define TCR_T0SZ_SHIFT		U(0)
-#define TCR_EPD0		BIT32(7)
+#define TCR_EPD0		BIT64(7)
 #define TCR_IRGN0_SHIFT		U(8)
 #define TCR_ORGN0_SHIFT		U(10)
 #define TCR_SH0_SHIFT		U(12)
 #define TCR_T1SZ_SHIFT		U(16)
-#define TCR_A1			BIT32(22)
-#define TCR_EPD1		BIT32(23)
+#define TCR_A1			BIT64(22)
+#define TCR_EPD1		BIT64(23)
 #define TCR_IRGN1_SHIFT		U(24)
 #define TCR_ORGN1_SHIFT		U(26)
 #define TCR_SH1_SHIFT		U(28)
 #define TCR_EL1_IPS_SHIFT	U(32)
 #define TCR_EL1_IPS_MASK	UINT64_C(0x7)
-#define TCR_TG1_4KB		SHIFT_U32(2, 30)
-#define TCR_RES1		BIT32(31)
+#define TCR_TG1_4KB		SHIFT_U64(2, 30)
+#define TCR_RES1		BIT64(31)
+#define TCR_TBI0		BIT64(37)
+#define TCR_TBI1		BIT64(38)
+#define TCR_TCMA0		BIT64(57)
+#define TCR_TCMA1		BIT64(58)
 
 
 /* Normal memory, Inner/Outer Non-cacheable */
@@ -135,11 +164,15 @@
 #define ESR_EC_AARCH32_CP14_LS	U(0x06)
 #define ESR_EC_FP_ASIMD		U(0x07)
 #define ESR_EC_AARCH32_CP10_ID	U(0x08)
+#define ESR_EC_PAUTH		U(0x09)
 #define ESR_EC_AARCH32_CP14_64	U(0x0c)
+#define ESR_EC_BTI		U(0x0d)
 #define ESR_EC_ILLEGAL		U(0x0e)
 #define ESR_EC_AARCH32_SVC	U(0x11)
 #define ESR_EC_AARCH64_SVC	U(0x15)
 #define ESR_EC_AARCH64_SYS	U(0x18)
+#define ESR_EC_ERET		U(0x1a)
+#define ESR_EC_FPAC		U(0x1c)
 #define ESR_EC_IABT_EL0		U(0x20)
 #define ESR_EC_IABT_EL1		U(0x21)
 #define ESR_EC_PC_ALIGN		U(0x22)
@@ -174,6 +207,7 @@
 #define ESR_FSC_PERMF_L1	U(0x0d)
 #define ESR_FSC_PERMF_L2	U(0x0e)
 #define ESR_FSC_PERMF_L3	U(0x0f)
+#define ESR_FSC_TAG_CHECK	U(0x11)
 #define ESR_FSC_ALIGN		U(0x21)
 
 /* WnR for DABT and RES0 for IABT */
@@ -192,47 +226,105 @@
 #define PAR_PA_SHIFT		U(12)
 #define PAR_PA_MASK		(BIT64(36) - 1)
 
-#define TLBI_MVA_SHIFT		U(12)
+#define TLBI_VA_SHIFT		U(12)
 #define TLBI_ASID_SHIFT		U(48)
 #define TLBI_ASID_MASK		U(0xff)
 
 #define ID_AA64PFR1_EL1_BT_MASK	ULL(0xf)
 #define FEAT_BTI_IMPLEMENTED	ULL(0x1)
 
+#define ID_AA64PFR1_EL1_MTE_MASK	UL(0xf)
+#define ID_AA64PFR1_EL1_MTE_SHIFT	U(8)
+#define FEAT_MTE_NOT_IMPLEMENTED	U(0x0)
+#define FEAT_MTE_IMPLEMENTED		U(0x1)
+#define FEAT_MTE2_IMPLEMENTED		U(0x2)
+#define FEAT_MTE3_IMPLEMENTED		U(0x3)
+
+#define ID_AA64MMFR0_EL1_PARANGE_MASK	UL(0xf)
+
+#define ID_AA64MMFR1_EL1_PAN_MASK	UL(0xf)
+#define ID_AA64MMFR1_EL1_PAN_SHIFT	U(20)
+#define FEAT_PAN_NOT_IMPLEMENTED	U(0x0)
+#define FEAT_PAN_IMPLEMENTED		U(0x1)
+#define FEAT_PAN2_IMPLEMENTED		U(0x2)
+#define FEAT_PAN3_IMPLEMENTED		U(0x3)
+
+#define ID_AA64ISAR0_EL1_CRC32_MASK	UL(0xf)
+#define ID_AA64ISAR0_EL1_CRC32_SHIFT	U(16)
+#define FEAT_CRC32_NOT_IMPLEMENTED	U(0x0)
+#define FEAT_CRC32_IMPLEMENTED		U(0x1)
+
+#define ID_AA64ISAR1_GPI_SHIFT		U(28)
+#define ID_AA64ISAR1_GPI_MASK		U(0xf)
+#define ID_AA64ISAR1_GPI_NI		U(0x0)
+#define ID_AA64ISAR1_GPI_IMP_DEF	U(0x1)
+
+#define ID_AA64ISAR1_GPA_SHIFT		U(24)
+#define ID_AA64ISAR1_GPA_MASK		U(0xf)
+#define ID_AA64ISAR1_GPA_NI		U(0x0)
+#define ID_AA64ISAR1_GPA_ARCHITECTED	U(0x1)
+
+#define ID_AA64ISAR1_API_SHIFT			U(8)
+#define ID_AA64ISAR1_API_MASK			U(0xf)
+#define ID_AA64ISAR1_API_NI			U(0x0)
+#define ID_AA64ISAR1_API_IMP_DEF		U(0x1)
+#define ID_AA64ISAR1_API_IMP_DEF_EPAC		U(0x2)
+#define ID_AA64ISAR1_API_IMP_DEF_EPAC2		U(0x3)
+#define ID_AA64ISAR1_API_IMP_DEF_EPAC2_FPAC	U(0x4)
+#define ID_AA64ISAR1_API_IMP_DEF_EPAC2_FPAC_CMB	U(0x5)
+
+#define ID_AA64ISAR1_APA_SHIFT			U(4)
+#define ID_AA64ISAR1_APA_MASK			U(0xf)
+#define ID_AA64ISAR1_APA_NI			U(0x0)
+#define ID_AA64ISAR1_APA_ARCHITECTED		U(0x1)
+#define ID_AA64ISAR1_APA_ARCH_EPAC		U(0x2)
+#define ID_AA64ISAR1_APA_ARCH_EPAC2		U(0x3)
+#define ID_AA64ISAR1_APA_ARCH_EPAC2_FPAC	U(0x4)
+#define ID_AA64ISAR1_APA_ARCH_EPAC2_FPAC_CMB	U(0x5)
+
+#define ID_MMFR3_EL1_PAN_SHIFT			U(16)
+
+#define GCR_EL1_RRND				BIT64(16)
+
 #ifndef __ASSEMBLER__
 static inline __noprof void isb(void)
 {
-	asm volatile ("isb");
+	asm volatile ("isb" : : : "memory");
 }
 
 static inline __noprof void dsb(void)
 {
-	asm volatile ("dsb sy");
+	asm volatile ("dsb sy" : : : "memory");
 }
 
 static inline __noprof void dsb_ish(void)
 {
-	asm volatile ("dsb ish");
+	asm volatile ("dsb ish" : : : "memory");
 }
 
 static inline __noprof void dsb_ishst(void)
 {
-	asm volatile ("dsb ishst");
+	asm volatile ("dsb ishst" : : : "memory");
+}
+
+static inline __noprof void dsb_osh(void)
+{
+	asm volatile ("dsb osh" : : : "memory");
 }
 
 static inline __noprof void sev(void)
 {
-	asm volatile ("sev");
+	asm volatile ("sev" : : : "memory");
 }
 
 static inline __noprof void wfe(void)
 {
-	asm volatile ("wfe");
+	asm volatile ("wfe" : : : "memory");
 }
 
 static inline __noprof void wfi(void)
 {
-	asm volatile ("wfi");
+	asm volatile ("wfi" : : : "memory");
 }
 
 static inline __noprof void write_at_s1e1r(uint64_t va)
@@ -264,14 +356,34 @@ static inline __noprof uint64_t read_pmu_ccnt(void)
 	return val;
 }
 
-static inline __noprof void tlbi_vaae1is(uint64_t mva)
+static inline __noprof void tlbi_vaae1is(uint64_t va)
 {
-	asm volatile ("tlbi	vaae1is, %0" : : "r" (mva));
+	asm volatile ("tlbi	vaae1is, %0" : : "r" (va));
 }
 
-static inline __noprof void tlbi_vale1is(uint64_t mva)
+static inline __noprof void tlbi_vale1is(uint64_t va)
 {
-	asm volatile ("tlbi	vale1is, %0" : : "r" (mva));
+	asm volatile ("tlbi	vale1is, %0" : : "r" (va));
+}
+
+static inline void write_64bit_pair(uint64_t dst, uint64_t hi, uint64_t lo)
+{
+	/* 128bits should be written to hardware at one time */
+	asm volatile ("stp %1, %0, [%2]" : :
+		      "r" (hi), "r" (lo), "r" (dst) : "memory");
+}
+
+static inline void read_64bit_pair(uint64_t src, uint64_t *hi, uint64_t *lo)
+{
+	uint64_t tmp0 = 0;
+	uint64_t tmp1 = 0;
+
+	/* 128bits should be read from hardware at one time */
+	asm volatile ("ldp %0, %1, [%2]\n" : "=&r"(tmp0), "=&r"(tmp1) :
+		      "r"(src) : "memory");
+
+	*lo = tmp0;
+	*hi = tmp1;
 }
 
 /*
@@ -327,7 +439,7 @@ DEFINE_U32_REG_READWRITE_FUNCS(fpsr)
 DEFINE_U32_REG_READ_FUNC(ctr_el0)
 #define read_ctr() read_ctr_el0()
 DEFINE_U32_REG_READ_FUNC(contextidr_el1)
-DEFINE_U32_REG_READ_FUNC(sctlr_el1)
+DEFINE_U64_REG_READ_FUNC(sctlr_el1)
 
 /* ARM Generic timer functions */
 DEFINE_REG_READ_FUNC_(cntfrq, uint32_t, cntfrq_el0)
@@ -358,7 +470,25 @@ DEFINE_U64_REG_READ_FUNC(par_el1)
 
 DEFINE_U64_REG_WRITE_FUNC(mair_el1)
 
+DEFINE_U64_REG_READ_FUNC(id_aa64mmfr0_el1)
+DEFINE_U64_REG_READ_FUNC(id_aa64mmfr1_el1)
 DEFINE_U64_REG_READ_FUNC(id_aa64pfr1_el1)
+DEFINE_U64_REG_READ_FUNC(id_aa64isar0_el1)
+DEFINE_U64_REG_READ_FUNC(id_aa64isar1_el1)
+DEFINE_REG_READ_FUNC_(apiakeylo, uint64_t, S3_0_c2_c1_0)
+DEFINE_REG_READ_FUNC_(apiakeyhi, uint64_t, S3_0_c2_c1_1)
+
+DEFINE_REG_WRITE_FUNC_(apibkeylo, uint64_t, S3_0_c2_c1_2)
+DEFINE_REG_WRITE_FUNC_(apibkeyhi, uint64_t, S3_0_c2_c1_3)
+
+DEFINE_REG_READ_FUNC_(apdakeylo, uint64_t, S3_0_c2_c2_0)
+DEFINE_REG_READ_FUNC_(apdakeyhi, uint64_t, S3_0_c2_c2_1)
+
+DEFINE_REG_WRITE_FUNC_(apdbkeylo, uint64_t, S3_0_c2_c2_2)
+DEFINE_REG_WRITE_FUNC_(apdbkeyhi, uint64_t, S3_0_c2_c2_3)
+
+DEFINE_REG_WRITE_FUNC_(apgakeylo, uint64_t, S3_0_c2_c3_0)
+DEFINE_REG_WRITE_FUNC_(apgakeyhi, uint64_t, S3_0_c2_c3_1)
 
 /* Register read/write functions for GICC registers by using system interface */
 DEFINE_REG_READ_FUNC_(icc_ctlr, uint32_t, S3_0_C12_C12_4)
@@ -370,7 +500,25 @@ DEFINE_REG_WRITE_FUNC_(icc_eoir0, uint32_t, S3_0_c12_c8_1)
 DEFINE_REG_WRITE_FUNC_(icc_eoir1, uint32_t, S3_0_c12_c12_1)
 DEFINE_REG_WRITE_FUNC_(icc_igrpen0, uint32_t, S3_0_C12_C12_6)
 DEFINE_REG_WRITE_FUNC_(icc_igrpen1, uint32_t, S3_0_C12_C12_7)
+DEFINE_REG_WRITE_FUNC_(icc_sgi1r, uint64_t, S3_0_C12_C11_5)
+DEFINE_REG_WRITE_FUNC_(icc_asgi1r, uint64_t, S3_0_C12_C11_6)
+
+DEFINE_REG_WRITE_FUNC_(pan, uint64_t, S3_0_c4_c2_3)
+DEFINE_REG_READ_FUNC_(pan, uint64_t, S3_0_c4_c2_3)
+
+static inline void write_pan_enable(void)
+{
+	/* msr pan, #1 */
+	asm volatile("msr	S0_0_c4_c1_4, xzr" ::: "memory" );
+}
+
+static inline void write_pan_disable(void)
+{
+	/* msr pan, #0 */
+	asm volatile("msr	S0_0_c4_c0_4, xzr" ::: "memory" );
+}
+
 #endif /*__ASSEMBLER__*/
 
-#endif /*ARM64_H*/
+#endif /*__ARM64_H*/
 

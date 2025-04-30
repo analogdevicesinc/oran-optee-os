@@ -24,7 +24,6 @@
 #define MAX_NODE_STRING_LENGTH          200
 #define DT_LOG_MESSAGE_MAX              512
 
-static struct gic_data gic_data;
 static struct pl011_data console_data;
 
 /* Anti-rollback counters */
@@ -122,17 +121,9 @@ uint32_t plat_get_te_anti_rollback_counter(void)
 	return te_anti_rollback_counter;
 }
 
-void common_main_init_gic(void)
+void common_boot_primary_init_intc(void)
 {
-	vaddr_t gicd_base;
-
-	gicd_base = core_mmu_get_va(GIC_BASE, MEM_AREA_IO_SEC, 1);
-
-	if (!gicd_base)
-		panic();
-
-	gic_init_base_addr(&gic_data, 0, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(0, GIC_BASE);
 
 	init_anti_rollback_counter();
 	init_te_anti_rollback_counter();
@@ -241,11 +232,6 @@ void __printf(1, 2) plat_runtime_warn_message(const char *fmt, ...){
 	IMSG("WARNING: %s\n", message);
 }
 
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
-}
-
 void console_init(void)
 {
 	/* UART0 console initialized in TF-A. No need to reinitialize with clock and baud rate */
@@ -274,16 +260,20 @@ TEE_Result tee_otp_get_hw_unique_key(struct tee_hw_unique_key *hwkey)
 	return TEE_SUCCESS;
 }
 
-uint8_t hw_get_random_byte(void)
+TEE_Result hw_get_random_bytes(void *buf, size_t len)
 {
-	uint8_t seed;
 	int status = 0;
+	uint8_t *buffer_ptr = buf;
+	size_t pos = 0;
 
-	status = adi_enclave_random_bytes(TE_MAILBOX_BASE, &seed, sizeof(seed));
-	if (status != 0) {
-		plat_error_message("Unable to get random byte");
-		panic();
+	while (pos < len) {
+		status = adi_enclave_random_bytes(TE_MAILBOX_BASE, &buffer_ptr[pos], 1);
+		if (status != 0) {
+			plat_error_message("Unable to get random byte");
+			panic();
+		}
+		pos++;
 	}
 
-	return seed;
+	return TEE_SUCCESS;
 }

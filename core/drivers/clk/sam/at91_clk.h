@@ -118,12 +118,19 @@ extern const struct clk_master_layout at91sam9x5_master_layout;
 
 vaddr_t at91_pmc_get_base(void);
 
+TEE_Result at91_pmc_clk_get(unsigned int type, unsigned int idx,
+			    struct clk **clk);
+
+TEE_Result pmc_clk_get(struct pmc_data *pmc, unsigned int type,
+		       unsigned int idx, struct clk **clk);
+
+struct clk *at91_sckc_clk_get(void);
+
 struct pmc_data *pmc_data_allocate(unsigned int ncore, unsigned int nsystem,
 				   unsigned int nperiph, unsigned int ngck,
 				   unsigned int npck);
 
-struct clk *clk_dt_pmc_get(struct dt_driver_phandle_args *args, void *data,
-			   TEE_Result *res);
+TEE_Result clk_dt_pmc_get(struct dt_pargs *args, void *data, struct clk **clk);
 
 struct clk *pmc_clk_get_by_name(struct pmc_clk *clks, unsigned int nclk,
 				const char *name);
@@ -222,5 +229,15 @@ at91_clk_register_audio_pll_pad(struct pmc_data *pmc, const char *name,
 struct clk *
 at91_clk_register_audio_pll_pmc(struct pmc_data *pmc, const char *name,
 				struct clk *parent);
+
+#ifdef CFG_PM_ARM32
+void pmc_register_id(uint8_t id);
+void pmc_register_pck(uint8_t pck);
+void pmc_register_pm(void);
+#else
+static inline void pmc_register_id(uint8_t id __unused) {}
+static inline void pmc_register_pck(uint8_t pck __unused) {}
+static inline void pmc_register_pm(void) {}
+#endif
 
 #endif

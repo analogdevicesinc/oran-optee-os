@@ -2,15 +2,16 @@
 /*
  * ADI GPIO Driver
  *
- * Copyright (c) 2023, Analog Devices Incorporated. All rights reserved.
+ * Copyright (c) 2023-2025, Analog Devices Incorporated. All rights reserved.
  */
 
 #include <assert.h>
-#include <drivers/adi/adrv906x/adi_adrv906x_pinmux_source_def.h>
+#include <drivers/gpio.h>
 #include <initcall.h>
 #include <io.h>
 #include <mm/core_memprot.h>
-#include <gpio.h>
+
+#include <drivers/adi/adrv906x/adi_adrv906x_pinmux_source_def.h>
 
 #include "adi_adrv906x_gpio.h"
 
@@ -68,8 +69,8 @@ struct adi_adrv906x_gpio_chip_data {
  * chip:        pointer to GPIO controller chip instance
  * gpio_pin:    pin from which value needs to be read
  */
-static enum gpio_level gpio_get_value(struct gpio_chip *chip,
-				      unsigned int gpio_pin)
+static enum gpio_level adi_adrv906x_gpio_get_value(struct gpio_chip *chip,
+						   unsigned int gpio_pin)
 {
 	vaddr_t gpio_data_addr = 0;
 	uint32_t data = 0;
@@ -98,8 +99,8 @@ static enum gpio_level gpio_get_value(struct gpio_chip *chip,
  * gpio_pin:    pin to which value needs to be write
  * value:       value needs to be written to the pin
  */
-static void gpio_set_value(struct gpio_chip *chip, unsigned int gpio_pin,
-			   enum gpio_level value)
+static void adi_adrv906x_gpio_set_value(struct gpio_chip *chip, unsigned int gpio_pin,
+					enum gpio_level value)
 {
 	vaddr_t gpio_data_addr = 0;
 	uint32_t offset, bitmask, reg;
@@ -127,8 +128,8 @@ static void gpio_set_value(struct gpio_chip *chip, unsigned int gpio_pin,
  * chip:        pointer to GPIO controller chip instance
  * gpio_pin:    pin from which direction needs to be read
  */
-static enum gpio_dir gpio_get_direction(struct gpio_chip *chip,
-					unsigned int gpio_pin)
+static enum gpio_dir adi_adrv906x_gpio_get_direction(struct gpio_chip *chip,
+						     unsigned int gpio_pin)
 {
 	vaddr_t gpio_dir_addr = 0;
 	uint32_t offset, data;
@@ -155,8 +156,8 @@ static enum gpio_dir gpio_get_direction(struct gpio_chip *chip,
  * gpio_pin:    pin on which direction needs to be set
  * direction:   direction which needs to be set on pin
  */
-static void gpio_set_direction(struct gpio_chip *chip, unsigned int gpio_pin,
-			       enum gpio_dir direction)
+static void adi_adrv906x_gpio_set_direction(struct gpio_chip *chip, unsigned int gpio_pin,
+					    enum gpio_dir direction)
 {
 	vaddr_t gpio_dir_addr = 0;
 	uint32_t offset, data, cleared_data;
@@ -179,10 +180,10 @@ static void gpio_set_direction(struct gpio_chip *chip, unsigned int gpio_pin,
 }
 
 static const struct gpio_ops adi_adrv906x_gpio_ops = {
-	.get_direction	= gpio_get_direction,
-	.set_direction	= gpio_set_direction,
-	.get_value	= gpio_get_value,
-	.set_value	= gpio_set_value,
+	.get_direction	= adi_adrv906x_gpio_get_direction,
+	.set_direction	= adi_adrv906x_gpio_set_direction,
+	.get_value	= adi_adrv906x_gpio_get_value,
+	.set_value	= adi_adrv906x_gpio_set_value,
 };
 
 static TEE_Result adi_adrv906x_gpio_init(void)

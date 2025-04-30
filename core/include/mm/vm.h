@@ -2,15 +2,15 @@
 /*
  * Copyright (c) 2014, STMicroelectronics International N.V.
  */
-#ifndef TEE_MMU_H
-#define TEE_MMU_H
+#ifndef __MM_VM_H
+#define __MM_VM_H
 
 #include <tee_api_types.h>
 #include <kernel/tee_ta_manager.h>
 #include <kernel/user_ta.h>
 
 /* Allocate context resources like ASID and MMU table information */
-TEE_Result vm_info_init(struct user_mode_ctx *uctx);
+TEE_Result vm_info_init(struct user_mode_ctx *uctx, struct ts_ctx *ts_ctx);
 
 /* Release context resources like ASID */
 void vm_info_final(struct user_mode_ctx *uctx);
@@ -62,10 +62,6 @@ TEE_Result vm_map_param(struct user_mode_ctx *uctx, struct tee_ta_param *param,
 			void *param_va[TEE_NUM_PARAMS]);
 void vm_clean_param(struct user_mode_ctx *uctx);
 
-TEE_Result vm_add_rwmem(struct user_mode_ctx *uctx, struct mobj *mobj,
-			vaddr_t *va);
-void vm_rem_rwmem(struct user_mode_ctx *uctx, struct mobj *mobj, vaddr_t va);
-
 /*
  * User mode private memory is defined as user mode image static segment
  * (code, ro/rw static data, heap, stack). The sole other virtual memory
@@ -101,4 +97,4 @@ void vm_set_ctx(struct ts_ctx *ctx);
 
 struct mobj *vm_get_mobj(struct user_mode_ctx *uctx, vaddr_t va, size_t *len,
 			 uint16_t *prot, size_t *offs);
-#endif /*TEE_MMU_H*/
+#endif /*__MM_VM_H*/

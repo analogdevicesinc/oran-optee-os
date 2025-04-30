@@ -86,14 +86,14 @@ static uint8_t caam_era;
  */
 static void do_free_keypair(struct rsa_keypair *key)
 {
-	crypto_bignum_free(key->e);
-	crypto_bignum_free(key->d);
-	crypto_bignum_free(key->n);
-	crypto_bignum_free(key->p);
-	crypto_bignum_free(key->q);
-	crypto_bignum_free(key->qp);
-	crypto_bignum_free(key->dp);
-	crypto_bignum_free(key->dq);
+	crypto_bignum_free(&key->e);
+	crypto_bignum_free(&key->d);
+	crypto_bignum_free(&key->n);
+	crypto_bignum_free(&key->p);
+	crypto_bignum_free(&key->q);
+	crypto_bignum_free(&key->qp);
+	crypto_bignum_free(&key->dp);
+	crypto_bignum_free(&key->dq);
 }
 
 /*
@@ -435,8 +435,8 @@ static TEE_Result do_allocate_publickey(struct rsa_public_key *key,
 err_alloc_publickey:
 	RSA_TRACE("Allocation error");
 
-	crypto_bignum_free(key->e);
-	crypto_bignum_free(key->n);
+	crypto_bignum_free(&key->e);
+	crypto_bignum_free(&key->n);
 
 	return TEE_ERROR_OUT_OF_MEMORY;
 }
@@ -448,8 +448,8 @@ err_alloc_publickey:
  */
 static void do_free_publickey(struct rsa_public_key *key)
 {
-	crypto_bignum_free(key->e);
-	crypto_bignum_free(key->n);
+	crypto_bignum_free(&key->e);
+	crypto_bignum_free(&key->n);
 }
 
 /*
@@ -1455,6 +1455,14 @@ static TEE_Result do_caam_decrypt(struct drvcrypt_rsa_ed *rsa_data,
 			/* PKCS 1 v1.5 */
 			cache_operation(TEE_CACHEINVALIDATE, size_msg.data,
 					size_msg.length);
+
+			/* Check if the original buffer size is large enough */
+			if (msg.orig.length < caam_read_val32(size_msg.data)) {
+				rsa_data->message.length =
+						caam_read_val32(size_msg.data);
+				ret = TEE_ERROR_SHORT_BUFFER;
+				goto exit_decrypt;
+			}
 
 			msg.orig.length = caam_read_val32(size_msg.data);
 			RSA_TRACE("New length %zu", msg.orig.length);

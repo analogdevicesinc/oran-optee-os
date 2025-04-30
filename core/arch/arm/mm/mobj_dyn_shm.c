@@ -166,13 +166,13 @@ static void mobj_reg_shm_free(struct mobj *mobj)
 	}
 }
 
-static TEE_Result mobj_reg_shm_get_cattr(struct mobj *mobj __unused,
-					 uint32_t *cattr)
+static TEE_Result mobj_reg_shm_get_mem_type(struct mobj *mobj __unused,
+					    uint32_t *mt)
 {
-	if (!cattr)
+	if (!mt)
 		return TEE_ERROR_GENERIC;
 
-	*cattr = TEE_MATTR_CACHE_CACHED;
+	*mt = TEE_MATTR_MEM_TYPE_CACHED;
 
 	return TEE_SUCCESS;
 }
@@ -200,7 +200,7 @@ static TEE_Result mobj_reg_shm_inc_map(struct mobj *mobj)
 	}
 
 	/*
-	 * If we have beated another thread calling mobj_reg_shm_dec_map()
+	 * If we have beaten another thread calling mobj_reg_shm_dec_map()
 	 * to get the lock we need only to reinitialize mapcount to 1.
 	 */
 	if (!r->mm) {
@@ -238,7 +238,14 @@ static TEE_Result mobj_reg_shm_dec_map(struct mobj *mobj)
 
 	exceptions = cpu_spin_lock_xsave(&reg_shm_map_lock);
 
-	if (!refcount_val(&r->mapcount))
+	/*
+	 * Check that another thread hasn't been able to:
+	 * - increase the mapcount
+	 * - or, increase the mapcount, decrease it again, and set r->mm to
+	 *   NULL
+	 * before we acquired the spinlock
+	 */
+	if (!refcount_val(&r->mapcount) && r->mm)
 		reg_shm_unmap_helper(r);
 
 	cpu_spin_unlock_xrestore(&reg_shm_map_lock, exceptions);
@@ -260,11 +267,11 @@ static uint64_t mobj_reg_shm_get_cookie(struct mobj *mobj)
  * shm mandates these resources to be unpaged.
  */
 const struct mobj_ops mobj_reg_shm_ops
-__weak __rodata_unpaged("mobj_reg_shm_ops") = {
+__weak __relrodata_unpaged("mobj_reg_shm_ops") = {
 	.get_pa = mobj_reg_shm_get_pa,
 	.get_phys_offs = mobj_reg_shm_get_phys_offs,
 	.get_va = mobj_reg_shm_get_va,
-	.get_cattr = mobj_reg_shm_get_cattr,
+	.get_mem_type = mobj_reg_shm_get_mem_type,
 	.matches = mobj_reg_shm_matches,
 	.free = mobj_reg_shm_free,
 	.get_cookie = mobj_reg_shm_get_cookie,

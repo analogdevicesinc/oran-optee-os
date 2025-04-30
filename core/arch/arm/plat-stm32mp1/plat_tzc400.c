@@ -14,6 +14,13 @@
 #include <trace.h>
 #include <util.h>
 
+#ifdef CFG_STM32MP15
+#define TZC_FILTERS_MASK	GENMASK_32(1, 0)
+#endif
+#ifdef CFG_STM32MP13
+#define TZC_FILTERS_MASK	GENMASK_32(0, 0)
+#endif
+
 static enum itr_return tzc_it_handler(struct itr_handler *handler __unused)
 {
 	EMSG("TZC permission failure");
@@ -33,11 +40,12 @@ static struct itr_handler tzc_itr_handler = {
 };
 DECLARE_KEEP_PAGER(tzc_itr_handler);
 
-static bool tzc_region_is_non_secure(unsigned int i, vaddr_t base, size_t size)
+static bool tzc_region_is_non_secure(unsigned int i, uint64_t pa, size_t size)
 {
 	struct tzc_region_config region_cfg = { };
 	uint32_t ns_cpu_mask = TZC_REGION_ACCESS_RDWR(STM32MP1_TZC_A7_ID);
-	uint32_t filters_mask = GENMASK_32(1, 0);
+	uint32_t filters_mask = TZC_FILTERS_MASK;
+	vaddr_t base = pa;
 
 	if (tzc_get_region_config(i, &region_cfg))
 		panic();
@@ -51,7 +59,7 @@ static bool tzc_region_is_non_secure(unsigned int i, vaddr_t base, size_t size)
 static bool tzc_region_is_secure(unsigned int i, vaddr_t base, size_t size)
 {
 	struct tzc_region_config region_cfg = { };
-	uint32_t filters_mask = GENMASK_32(1, 0);
+	uint32_t filters_mask = TZC_FILTERS_MASK;
 
 	if (tzc_get_region_config(i, &region_cfg))
 		panic();
@@ -64,6 +72,7 @@ static bool tzc_region_is_secure(unsigned int i, vaddr_t base, size_t size)
 
 static TEE_Result init_stm32mp1_tzc(void)
 {
+	TEE_Result res = TEE_ERROR_GENERIC;
 	void *base = phys_to_virt(TZC_BASE, MEM_AREA_IO_SEC, 1);
 	unsigned int region_index = 1;
 	const uint64_t dram_start = DDR_BASE;
@@ -101,8 +110,12 @@ static TEE_Result init_stm32mp1_tzc(void)
 			panic("Unexpected TZC area on non-secure region");
 	}
 
-	itr_add(&tzc_itr_handler);
-	itr_enable(tzc_itr_handler.it);
+	res = interrupt_add_handler_with_chip(interrupt_get_main_chip(),
+					      &tzc_itr_handler);
+	if (res)
+		panic();
+
+	interrupt_enable(tzc_itr_handler.chip, tzc_itr_handler.it);
 	tzc_set_action(TZC_ACTION_INT);
 
 	return TEE_SUCCESS;

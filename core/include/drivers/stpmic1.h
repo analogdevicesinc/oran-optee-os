@@ -3,8 +3,8 @@
  * Copyright (c) 2016-2018, STMicroelectronics - All Rights Reserved
  */
 
-#ifndef __STPMIC1_H__
-#define __STPMIC1_H__
+#ifndef __DRIVERS_STPMIC1_H
+#define __DRIVERS_STPMIC1_H
 
 #include <drivers/stm32_i2c.h>
 #include <util.h>
@@ -173,19 +173,6 @@ int stpmic1_register_read(uint8_t register_id, uint8_t *value);
 int stpmic1_register_write(uint8_t register_id, uint8_t value);
 int stpmic1_register_update(uint8_t register_id, uint8_t value, uint8_t mask);
 
-/* API for gating of regulators driven from STPMIC1 device */
-bool stpmic1_regulator_is_valid(const char *name);
-int stpmic1_regulator_enable(const char *name);
-int stpmic1_regulator_disable(const char *name);
-bool stpmic1_is_regulator_enabled(const char *name);
-
-void stpmic1_regulator_levels_mv(const char *name,
-				 const uint16_t **levels,
-				 size_t *levels_count);
-
-/* API for voltage cnotrol of regulators driven from STPMIC1 device */
-int stpmic1_regulator_voltage_set(const char *name, uint16_t millivolts);
-int stpmic1_regulator_voltage_get(const char *name);
 int stpmic1_regulator_mask_reset_set(const char *name);
 
 /* API for low power configuration of regulators driven from STPMIC1 device */
@@ -254,4 +241,4 @@ int stpmic1_lp_voltage_cfg(const char *name, uint16_t millivolts,
 			   struct stpmic1_lp_cfg *cfg);
 int stpmic1_lp_voltage_unpg(struct stpmic1_lp_cfg *cfg);
 
-#endif /*__STPMIC1_H__*/
+#endif /*__DRIVERS_STPMIC1_H*/

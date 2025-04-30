@@ -9,7 +9,6 @@
 #include <drivers/stih_asc.h>
 #include <io.h>
 #include <kernel/boot.h>
-#include <kernel/interrupt.h>
 #include <kernel/misc.h>
 #include <kernel/panic.h>
 #include <kernel/tz_ssvce_pl310.h>
@@ -33,7 +32,6 @@ register_ddr(DRAM0_BASE, DRAM0_SIZE);
 register_ddr(DRAM1_BASE, DRAM1_SIZE);
 #endif
 
-static struct gic_data gic_data;
 static struct stih_asc_pd console_data;
 
 #if defined(PLATFORM_FLAVOR_b2260)
@@ -50,7 +48,7 @@ static bool ns_resources_ready(void)
 }
 
 /* Overriding the default __weak tee_entry_std() */
-uint32_t tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
+TEE_Result tee_entry_std(struct optee_msg_arg *arg, uint32_t num_params)
 {
 	boot_is_completed = 1;
 
@@ -80,7 +78,8 @@ void console_flush(void)
 	if (ns_resources_ready()) {
 		struct serial_chip *cons = &console_data.chip;
 
-		cons->ops->flush(cons);
+		if (cons->ops->flush)
+			cons->ops->flush(cons);
 	}
 }
 
@@ -133,27 +132,12 @@ void plat_primary_init_early(void)
 		io_write32(GIC_DIST_BASE + GIC_DIST_ISR1 + i, 0xFFFFFFFF);
 }
 
-void main_init_gic(void)
+void boot_primary_init_intc(void)
 {
-	vaddr_t gicc_base;
-	vaddr_t gicd_base;
-
-	gicc_base = (vaddr_t)phys_to_virt(GIC_CPU_BASE, MEM_AREA_IO_SEC, 1);
-	gicd_base = (vaddr_t)phys_to_virt(GIC_DIST_BASE, MEM_AREA_IO_SEC, 1);
-
-	if (!gicc_base || !gicd_base)
-		panic();
-
-	gic_init(&gic_data, gicc_base, gicd_base);
-	itr_init(&gic_data.chip);
+	gic_init(GIC_CPU_BASE, GIC_DIST_BASE);
 }
 
-void main_secondary_init_gic(void)
+void boot_secondary_init_intc(void)
 {
-	gic_cpu_init(&gic_data);
-}
-
-void itr_core_handler(void)
-{
-	gic_it_handle(&gic_data);
+	gic_init_per_cpu();
 }

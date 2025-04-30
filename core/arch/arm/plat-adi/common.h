@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void common_main_init_gic(void);
+void common_boot_primary_init_intc(void);
 
 uint32_t plat_get_sysclk_freq(void);
 uint32_t plat_get_anti_rollback_counter(void);

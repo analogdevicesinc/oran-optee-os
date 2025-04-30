@@ -25,21 +25,15 @@
 
 #ifndef MBEDTLS_CMAC_H
 #define MBEDTLS_CMAC_H
+#include "mbedtls/private_access.h"
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
+#include "mbedtls/build_info.h"
 
 #include "mbedtls/cipher.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* MBEDTLS_ERR_CMAC_HW_ACCEL_FAILED is deprecated and should not be used. */
-#define MBEDTLS_ERR_CMAC_HW_ACCEL_FAILED -0x007A  /**< CMAC hardware accelerator failed. */
 
 #define MBEDTLS_AES_BLOCK_SIZE          16
 #define MBEDTLS_DES3_BLOCK_SIZE         8
@@ -55,17 +49,16 @@ extern "C" {
 /**
  * The CMAC context structure.
  */
-struct mbedtls_cmac_context_t
-{
+struct mbedtls_cmac_context_t {
     /** The internal state of the CMAC algorithm.  */
-    unsigned char       state[MBEDTLS_CIPHER_BLKSIZE_MAX];
+    unsigned char       MBEDTLS_PRIVATE(state)[MBEDTLS_CIPHER_BLKSIZE_MAX];
 
     /** Unprocessed data - either data that was not block aligned and is still
      *  pending processing, or the final block. */
-    unsigned char       unprocessed_block[MBEDTLS_CIPHER_BLKSIZE_MAX];
+    unsigned char       MBEDTLS_PRIVATE(unprocessed_block)[MBEDTLS_CIPHER_BLKSIZE_MAX];
 
     /** The length of data pending processing. */
-    size_t              unprocessed_len;
+    size_t              MBEDTLS_PRIVATE(unprocessed_len);
 };
 
 #else  /* !MBEDTLS_CMAC_ALT */
@@ -73,7 +66,7 @@ struct mbedtls_cmac_context_t
 #endif /* !MBEDTLS_CMAC_ALT */
 
 /**
- * \brief               Initialises and allocat cmac context memory
+ * \brief               Initialises and allocate CMAC context memory
  *                      Must be called with an initialized cipher context.
  *
  * \param ctx           The cipher context used for the CMAC operation, initialized
@@ -86,9 +79,17 @@ struct mbedtls_cmac_context_t
 int mbedtls_cipher_cmac_setup(mbedtls_cipher_context_t *ctx);
 
 /**
- * \brief               This function sets the CMAC key, and prepares to authenticate
+ * \brief               This function starts a new CMAC computation
+ *                      by setting the CMAC key, and preparing to authenticate
  *                      the input data.
- *                      Must be called with an initialized cipher context.
+ *                      It must be called with an initialized cipher context.
+ *
+ *                      Once this function has completed, data can be supplied
+ *                      to the CMAC computation by calling
+ *                      mbedtls_cipher_cmac_update().
+ *
+ *                      To start a CMAC computation using the same key as a previous
+ *                      CMAC computation, use mbedtls_cipher_cmac_finish().
  *
  * \note                When the CMAC implementation is supplied by an alternate
  *                      implementation (through #MBEDTLS_CMAC_ALT), some ciphers
@@ -107,16 +108,22 @@ int mbedtls_cipher_cmac_setup(mbedtls_cipher_context_t *ctx);
  * \return              \c 0 on success.
  * \return              A cipher-specific error code on failure.
  */
-int mbedtls_cipher_cmac_starts( mbedtls_cipher_context_t *ctx,
-                                const unsigned char *key, size_t keybits );
+int mbedtls_cipher_cmac_starts(mbedtls_cipher_context_t *ctx,
+                               const unsigned char *key, size_t keybits);
 
 /**
  * \brief               This function feeds an input buffer into an ongoing CMAC
  *                      computation.
  *
- *                      It is called between mbedtls_cipher_cmac_starts() or
- *                      mbedtls_cipher_cmac_reset(), and mbedtls_cipher_cmac_finish().
- *                      Can be called repeatedly.
+ *                      The CMAC computation must have previously been started
+ *                      by calling mbedtls_cipher_cmac_starts() or
+ *                      mbedtls_cipher_cmac_reset().
+ *
+ *                      Call this function as many times as needed to input the
+ *                      data to be authenticated.
+ *                      Once all of the required data has been input,
+ *                      call mbedtls_cipher_cmac_finish() to obtain the result
+ *                      of the CMAC operation.
  *
  * \param ctx           The cipher context used for the CMAC operation.
  * \param input         The buffer holding the input data.
@@ -126,16 +133,17 @@ int mbedtls_cipher_cmac_starts( mbedtls_cipher_context_t *ctx,
  * \return             #MBEDTLS_ERR_MD_BAD_INPUT_DATA
  *                     if parameter verification fails.
  */
-int mbedtls_cipher_cmac_update( mbedtls_cipher_context_t *ctx,
-                                const unsigned char *input, size_t ilen );
+int mbedtls_cipher_cmac_update(mbedtls_cipher_context_t *ctx,
+                               const unsigned char *input, size_t ilen);
 
 /**
- * \brief               This function finishes the CMAC operation, and writes
- *                      the result to the output buffer.
+ * \brief               This function finishes an ongoing CMAC operation, and
+ *                      writes the result to the output buffer.
  *
- *                      It is called after mbedtls_cipher_cmac_update().
- *                      It can be followed by mbedtls_cipher_cmac_reset() and
- *                      mbedtls_cipher_cmac_update(), or mbedtls_cipher_free().
+ *                      It should be followed either by
+ *                      mbedtls_cipher_cmac_reset(), which starts another CMAC
+ *                      operation with the same key, or mbedtls_cipher_free(),
+ *                      which clears the cipher context.
  *
  * \param ctx           The cipher context used for the CMAC operation.
  * \param output        The output buffer for the CMAC checksum result.
@@ -144,16 +152,18 @@ int mbedtls_cipher_cmac_update( mbedtls_cipher_context_t *ctx,
  * \return              #MBEDTLS_ERR_MD_BAD_INPUT_DATA
  *                      if parameter verification fails.
  */
-int mbedtls_cipher_cmac_finish( mbedtls_cipher_context_t *ctx,
-                                unsigned char *output );
+int mbedtls_cipher_cmac_finish(mbedtls_cipher_context_t *ctx,
+                               unsigned char *output);
 
 /**
- * \brief               This function prepares the authentication of another
- *                      message with the same key as the previous CMAC
- *                      operation.
+ * \brief               This function starts a new CMAC operation with the same
+ *                      key as the previous one.
  *
- *                      It is called after mbedtls_cipher_cmac_finish()
- *                      and before mbedtls_cipher_cmac_update().
+ *                      It should be called after finishing the previous CMAC
+ *                      operation with mbedtls_cipher_cmac_finish().
+ *                      After calling this function,
+ *                      call mbedtls_cipher_cmac_update() to supply the new
+ *                      CMAC operation with data.
  *
  * \param ctx           The cipher context used for the CMAC operation.
  *
@@ -161,7 +171,7 @@ int mbedtls_cipher_cmac_finish( mbedtls_cipher_context_t *ctx,
  * \return              #MBEDTLS_ERR_MD_BAD_INPUT_DATA
  *                      if parameter verification fails.
  */
-int mbedtls_cipher_cmac_reset( mbedtls_cipher_context_t *ctx );
+int mbedtls_cipher_cmac_reset(mbedtls_cipher_context_t *ctx);
 
 /**
  * \brief               This function calculates the full generic CMAC
@@ -190,10 +200,10 @@ int mbedtls_cipher_cmac_reset( mbedtls_cipher_context_t *ctx );
  * \return              #MBEDTLS_ERR_MD_BAD_INPUT_DATA
  *                      if parameter verification fails.
  */
-int mbedtls_cipher_cmac( const mbedtls_cipher_info_t *cipher_info,
-                         const unsigned char *key, size_t keylen,
-                         const unsigned char *input, size_t ilen,
-                         unsigned char *output );
+int mbedtls_cipher_cmac(const mbedtls_cipher_info_t *cipher_info,
+                        const unsigned char *key, size_t keylen,
+                        const unsigned char *input, size_t ilen,
+                        unsigned char *output);
 
 #if defined(MBEDTLS_AES_C)
 /**
@@ -213,12 +223,12 @@ int mbedtls_cipher_cmac( const mbedtls_cipher_info_t *cipher_info,
  *
  * \return          \c 0 on success.
  */
-int mbedtls_aes_cmac_prf_128( const unsigned char *key, size_t key_len,
-                              const unsigned char *input, size_t in_len,
-                              unsigned char output[16] );
+int mbedtls_aes_cmac_prf_128(const unsigned char *key, size_t key_len,
+                             const unsigned char *input, size_t in_len,
+                             unsigned char output[16]);
 #endif /* MBEDTLS_AES_C */
 
-#if defined(MBEDTLS_SELF_TEST) && ( defined(MBEDTLS_AES_C) || defined(MBEDTLS_DES_C) )
+#if defined(MBEDTLS_SELF_TEST) && (defined(MBEDTLS_AES_C) || defined(MBEDTLS_DES_C))
 /**
  * \brief          The CMAC checkup routine.
  *
@@ -232,7 +242,7 @@ int mbedtls_aes_cmac_prf_128( const unsigned char *key, size_t key_len,
  * \return         \c 0 on success.
  * \return         \c 1 on failure.
  */
-int mbedtls_cmac_self_test( int verbose );
+int mbedtls_cmac_self_test(int verbose);
 #endif /* MBEDTLS_SELF_TEST && ( MBEDTLS_AES_C || MBEDTLS_DES_C ) */
 
 #ifdef __cplusplus

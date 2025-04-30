@@ -27,6 +27,7 @@
  */
 
 #include <console.h>
+#include <crypto/crypto.h>
 #include <kernel/boot.h>
 #include <kernel/panic.h>
 #include <mm/core_memprot.h>
@@ -34,18 +35,20 @@
 #include <stdint.h>
 #include <drivers/scif.h>
 #include <drivers/gic.h>
-#include <rng_support.h>
 
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, CONSOLE_UART_BASE, SCIF_REG_SIZE);
-register_phys_mem_pgdir(MEM_AREA_IO_SEC, PRR_BASE, SMALL_PAGE_SIZE);
 register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICD_BASE, GIC_DIST_REG_SIZE);
-register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICC_BASE, GIC_DIST_REG_SIZE);
+register_phys_mem_pgdir(MEM_AREA_IO_SEC, GICC_BASE, GIC_CPU_REG_SIZE);
+#ifdef PRR_BASE
+register_phys_mem_pgdir(MEM_AREA_IO_SEC, PRR_BASE, SMALL_PAGE_SIZE);
+#endif
 
 /* Legacy platforms */
 #if defined(PLATFORM_FLAVOR_salvator_h3) || \
 	defined(PLATFORM_FLAVOR_salvator_h3_4x2g) || \
 	defined(PLATFORM_FLAVOR_salvator_m3) || \
-	defined(PLATFORM_FLAVOR_salvator_m3_2x4g)
+	defined(PLATFORM_FLAVOR_salvator_m3_2x4g) || \
+	defined(PLATFORM_FLAVOR_spider_s4)
 register_ddr(NSEC_DDR_0_BASE, NSEC_DDR_0_SIZE);
 register_ddr(NSEC_DDR_1_BASE, NSEC_DDR_1_SIZE);
 #ifdef NSEC_DDR_2_BASE
@@ -57,7 +60,10 @@ register_ddr(NSEC_DDR_3_BASE, NSEC_DDR_3_SIZE);
 #endif
 
 static struct scif_uart_data console_data __nex_bss;
+
+#ifdef PRR_BASE
 uint32_t rcar_prr_value __nex_bss;
+#endif
 
 void console_init(void)
 {
@@ -65,14 +71,28 @@ void console_init(void)
 	register_serial_console(&console_data.chip);
 }
 
+#ifdef CFG_RCAR_ROMAPI
+/* Should only seed from a hardware random number generator */
+static_assert(!IS_ENABLED(CFG_WITH_SOFTWARE_PRNG));
+
 unsigned long plat_get_aslr_seed(void)
 {
 	unsigned long seed = 0;
-	size_t i;
 
-	/* On RCAR we can call hw_get_random_byte() on early boot stages */
-	for (i = 0; i < sizeof(seed); i++)
-		seed = (seed << 8) | hw_get_random_byte();
+	/* On RCAR we can get hw random bytes on early boot stages */
+	if (crypto_rng_read(&seed, sizeof(seed)))
+		panic();
 
 	return seed;
+}
+#endif
+
+void boot_primary_init_intc(void)
+{
+	gic_init(GICC_BASE, GICD_BASE);
+}
+
+void boot_secondary_init_intc(void)
+{
+	gic_init_per_cpu();
 }
