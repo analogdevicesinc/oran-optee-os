@@ -152,13 +152,15 @@ static uint64_t get_most_common_value(uint64_t data[], size_t size, uint8_t *is_
 
 static int get_rollback_counter_n(const uintptr_t mem_ctrl_base, unsigned int n, unsigned int *nv_ctr)
 {
+	int ret;
 	uint32_t rollback_counter[ROLLBACK_COUNTER_NUM_REGS] = { 0 };
 	const uintptr_t counter_addr = OTP_ROLLBACK_COUNTER_BASE + n * ROLLBACK_COUNTER_NUM_REGS;
 	uint32_t count = 0;
 	uint32_t index = 0;
 
-	if (otp_read_burst(mem_ctrl_base, counter_addr, rollback_counter, ROLLBACK_COUNTER_NUM_REGS, OTP_ECC_OFF) != ADI_OTP_SUCCESS) {
-		EMSG("%s: Cannot read Rollback Counter copy %d\n", __func__, n);
+	ret = otp_read_burst(mem_ctrl_base, counter_addr, rollback_counter, ROLLBACK_COUNTER_NUM_REGS, OTP_ECC_OFF);
+	if (ret != ADI_OTP_SUCCESS) {
+		EMSG("%s: Cannot read Rollback Counter copy %d (ret=%d)\n", __func__, n, ret);
 		return -EIO;
 	}
 
@@ -175,6 +177,7 @@ static int get_rollback_counter_n(const uintptr_t mem_ctrl_base, unsigned int n,
 
 static int set_rollback_counter_n(const uintptr_t mem_ctrl_base, unsigned int n, unsigned int nv_ctr)
 {
+	int ret;
 	uint32_t rollback_counter[ROLLBACK_COUNTER_NUM_REGS] = { 0 };
 	uint32_t index = 0;
 	uintptr_t counter_addr;
@@ -186,8 +189,9 @@ static int set_rollback_counter_n(const uintptr_t mem_ctrl_base, unsigned int n,
 	}
 
 	counter_addr = OTP_ROLLBACK_COUNTER_BASE + n * ROLLBACK_COUNTER_NUM_REGS;
-	if (otp_write_burst(mem_ctrl_base, counter_addr, rollback_counter, ROLLBACK_COUNTER_NUM_REGS, OTP_ECC_OFF) != ADI_OTP_SUCCESS) {
-		EMSG("%s: Cannot write Rollback Counter copy %d\n", __func__, n);
+	ret = otp_write_burst(mem_ctrl_base, counter_addr, rollback_counter, ROLLBACK_COUNTER_NUM_REGS, OTP_ECC_OFF);
+	if (ret != ADI_OTP_SUCCESS) {
+		EMSG("%s: Cannot write Rollback Counter copy %d (ret=%d)\n", __func__, n, ret);
 		return -EIO;
 	}
 
@@ -231,11 +235,13 @@ static bool get_most_common_mac(uint8_t *macs_list, uint8_t num_macs, uint8_t *s
 
 static int get_mac_addr_n(const uintptr_t mem_ctrl_base, uint8_t mac_number, uint8_t n, uint8_t *mac)
 {
+	int ret;
 	uint32_t mac32[MAC_ADDRESS_NUM_REGS] = { 0 };
 	const uintptr_t addr = OTP_MAC_ADDRESSES_BASE + (mac_number - 1) * MAC_ADDRESS_NUM_REGS * MAC_ADDRESS_NUM_COPIES + n * MAC_ADDRESS_NUM_REGS;
 
-	if (otp_read_burst(mem_ctrl_base, addr, mac32, MAC_ADDRESS_NUM_REGS, OTP_ECC_OFF) != ADI_OTP_SUCCESS) {
-		EMSG("%s: Cannot read MAC address %d\n", __func__, mac_number);
+	ret = otp_read_burst(mem_ctrl_base, addr, mac32, MAC_ADDRESS_NUM_REGS, OTP_ECC_OFF);
+	if (ret != ADI_OTP_SUCCESS) {
+		EMSG("%s: Cannot read MAC address %d (ret=%d)\n", __func__, mac_number, ret);
 		return -EIO;
 	}
 
@@ -384,13 +390,15 @@ int adrv906x_otp_get_mac_addr(const uintptr_t mem_ctrl_base, uint8_t mac_number,
 
 int adrv906x_otp_get_temp_sensor(const uintptr_t mem_ctrl_base, adrv906x_temp_group_id_t temp_group_id, uint32_t *value)
 {
+	int ret;
 	const uintptr_t addr = OTP_TEMP_SENSOR_BASE + (unsigned int)temp_group_id;
 
 	if (value == NULL)
 		return -EINVAL;
 
-	if (otp_read_burst(mem_ctrl_base, addr, value, 1, OTP_ECC_ON) != ADI_OTP_SUCCESS) {
-		EMSG("%s: Cannot read temp sensor at address 0x%lx\n", __func__, (unsigned long)addr);
+	ret = otp_read_burst(mem_ctrl_base, addr, value, 1, OTP_ECC_ON);
+	if (ret != ADI_OTP_SUCCESS) {
+		EMSG("%s: Cannot read temp sensor at address 0x%lx (ret=%d)\n", __func__, (unsigned long)addr, ret);
 		return -EIO;
 	}
 

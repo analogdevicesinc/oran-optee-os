@@ -146,8 +146,10 @@ static TEE_Result otp_temp_read_handler(TEE_Param params[TEE_NUM_PARAMS])
 		}
 	}
 
-	if (ret != ADI_OTP_SUCCESS)
+	if (ret != ADI_OTP_SUCCESS) {
+		plat_runtime_error_message("%s READ temp sensor failed (ret=%d)", TA_NAME, ret);
 		return TEE_ERROR_GENERIC;
+	}
 
 	params[OP_PARAM_TEMP_VALUE].value.a = value;
 	IMSG("%s value read back: 0x%x", TA_NAME, value);
