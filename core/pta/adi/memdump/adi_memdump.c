@@ -301,10 +301,13 @@ static TEE_Result invoke_command(void *psess __unused,
 
 	switch (cmd) {
 	case TA_ADI_MEMDUMP_RECORDS_CMD:
+		IMSG("%s memdump get number of records command...", TA_NAME);
 		return adi_memdump_get_num_records_handler(params);
 	case TA_ADI_MEMDUMP_CMD:
+		IMSG("%s memdump command, record number %d...", TA_NAME, params[OP_PARAM_RECORD_AND_ADDRESS].value.a);
 		return adi_memdump_handler(params);
 	case TA_ADI_MEMDUMP_SIZE_CMD:
+		IMSG("%s memdump get size of record %d...", TA_NAME, params[OP_PARAM_RECORD_NUM].value.a);
 		return adi_memdump_get_record_size_handler(params);
 	default: break;
 	}
